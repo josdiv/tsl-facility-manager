@@ -2,6 +2,7 @@ import 'package:get_it/get_it.dart';
 
 import '../../features/attendance/presentation/attendance_page.dart';
 import '../../features/messaging/presentation/messaging_pages.dart';
+import '../../features/profile/presentation/profile_cubit.dart';
 import '../../features/work_orders/data/in_memory_work_order_repository.dart';
 import '../../features/work_orders/domain/work_order_repository.dart';
 import '../../features/work_orders/presentation/bloc/work_orders_bloc.dart';
@@ -15,5 +16,6 @@ void configureDependencies() {
     )
     ..registerFactory(() => WorkOrdersBloc(sl()))
     ..registerFactory(AttendanceCubit.new)
-    ..registerFactory(MessagesCubit.new);
+    ..registerFactory(MessagesCubit.new)
+    ..registerFactory(ProfileCubit.new);
 }

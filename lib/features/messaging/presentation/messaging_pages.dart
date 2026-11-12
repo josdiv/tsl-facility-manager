@@ -121,17 +121,69 @@ class ConversationsPage extends StatelessWidget {
   }
 }
 
-class ChatPage extends StatefulWidget {
+class ChatPage extends StatelessWidget {
   const ChatPage({required this.role, required this.id, super.key});
 
   final AppRole role;
   final String id;
 
   @override
-  State<ChatPage> createState() => _ChatPageState();
+  Widget build(BuildContext context) {
+    return WorkOrderScope(
+      id: id,
+      builder: (context, order) => ChatThread(
+        role: role,
+        threadId: order.id,
+        title: 'Messages',
+        banner: '${order.id} · ${order.title}',
+      ),
+    );
+  }
 }
 
-class _ChatPageState extends State<ChatPage> {
+/// Support thread id for a role. One conversation per user.
+String supportThreadId(AppRole role) => 'support-${role.path}';
+
+class SupportChatPage extends StatelessWidget {
+  const SupportChatPage({required this.role, super.key});
+
+  final AppRole role;
+
+  @override
+  Widget build(BuildContext context) {
+    return ChatThread(
+      role: role,
+      threadId: supportThreadId(role),
+      title: 'Message support',
+      banner: 'TSL support · We reply during working hours',
+      emptyMessage:
+          'Ask a question or report a problem with the app. Our support team '
+          'replies here.',
+    );
+  }
+}
+
+class ChatThread extends StatefulWidget {
+  const ChatThread({
+    required this.role,
+    required this.threadId,
+    required this.title,
+    required this.banner,
+    this.emptyMessage = 'No messages yet. Send the first one below.',
+    super.key,
+  });
+
+  final AppRole role;
+  final String threadId;
+  final String title;
+  final String banner;
+  final String emptyMessage;
+
+  @override
+  State<ChatThread> createState() => _ChatThreadState();
+}
+
+class _ChatThreadState extends State<ChatThread> {
   final _draft = TextEditingController();
 
   @override
@@ -145,7 +197,7 @@ class _ChatPageState extends State<ChatPage> {
     if (message.isEmpty) return;
     final now = TimeOfDay.now();
     context.read<MessagesCubit>().send(
-      widget.id,
+      widget.threadId,
       ChatMessage(
         widget.role,
         widget.role.label,
@@ -160,75 +212,64 @@ class _ChatPageState extends State<ChatPage> {
   @override
   Widget build(BuildContext context) {
     final messages = context.select<MessagesCubit, List<ChatMessage>>(
-      (cubit) => cubit.state[widget.id] ?? const [],
+      (cubit) => cubit.state[widget.threadId] ?? const [],
     );
-    return WorkOrderScope(
-      id: widget.id,
-      builder: (context, order) => Scaffold(
-        appBar: AppBar(title: const Text('Messages')),
-        body: SafeArea(
-          top: false,
-          child: Column(
-            children: [
-              Container(
-                width: double.infinity,
-                color: AppColors.primarySoft,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
-                ),
-                child: Text(
-                  '${order.id} · ${order.title}',
-                  style: const TextStyle(
-                    color: AppColors.primaryDark,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
+    return Scaffold(
+      appBar: AppBar(title: Text(widget.title)),
+      body: SafeArea(
+        top: false,
+        child: Column(
+          children: [
+            Container(
+              width: double.infinity,
+              color: AppColors.primarySoft,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Text(
+                widget.banner,
+                style: const TextStyle(
+                  color: AppColors.primaryDark,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-              Expanded(
-                child: messages.isEmpty
-                    ? const EmptyListMessage(
-                        'No messages yet. Send the first one below.',
-                      )
-                    : ListView(
-                        padding: const EdgeInsets.all(16),
-                        children: [
-                          for (final message in messages)
-                            _Bubble(
-                              message,
-                              mine: message.sender == widget.role,
-                            ),
-                        ],
-                      ),
-              ),
-              ColoredBox(
-                color: AppColors.surface,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _draft,
-                          minLines: 1,
-                          maxLines: 4,
-                          decoration: const InputDecoration(
-                            hintText: 'Type a follow-up message…',
-                          ),
+            ),
+            Expanded(
+              child: messages.isEmpty
+                  ? EmptyListMessage(widget.emptyMessage)
+                  : ListView(
+                      padding: const EdgeInsets.all(16),
+                      children: [
+                        for (final message in messages)
+                          _Bubble(message, mine: message.sender == widget.role),
+                      ],
+                    ),
+            ),
+            ColoredBox(
+              color: AppColors.surface,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _draft,
+                        minLines: 1,
+                        maxLines: 4,
+                        decoration: const InputDecoration(
+                          hintText: 'Type a message…',
                         ),
                       ),
-                      IconButton(
-                        tooltip: 'Send message',
-                        onPressed: _send,
-                        icon: const Icon(Icons.send, color: AppColors.primary),
-                      ),
-                    ],
-                  ),
+                    ),
+                    IconButton(
+                      tooltip: 'Send message',
+                      onPressed: _send,
+                      icon: const Icon(Icons.send, color: AppColors.primary),
+                    ),
+                  ],
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

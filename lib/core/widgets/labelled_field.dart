@@ -67,6 +67,7 @@ class LabelledDropdown extends StatefulWidget {
     required this.label,
     required this.options,
     this.onChanged,
+    this.initialValue,
     super.key,
   });
 
@@ -74,12 +75,17 @@ class LabelledDropdown extends StatefulWidget {
   final List<String> options;
   final ValueChanged<String>? onChanged;
 
+  /// Starts on this option when it is one of [options]; otherwise the first.
+  final String? initialValue;
+
   @override
   State<LabelledDropdown> createState() => _LabelledDropdownState();
 }
 
 class _LabelledDropdownState extends State<LabelledDropdown> {
-  late String _value = widget.options.first;
+  late String _value = widget.options.contains(widget.initialValue)
+      ? widget.initialValue!
+      : widget.options.first;
 
   @override
   Widget build(BuildContext context) {
@@ -114,4 +120,13 @@ String? emailText(String? value) {
   return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)
       ? null
       : 'Enter a valid email address';
+}
+
+/// Validator for phone numbers: 7 to 15 digits, allowing +, spaces and dashes.
+String? phoneText(String? value) {
+  final phone = value?.trim() ?? '';
+  final digits = phone.replaceAll(RegExp(r'[\s-]'), '');
+  return RegExp(r'^\+?\d{7,15}$').hasMatch(digits)
+      ? null
+      : 'Enter a valid phone number';
 }

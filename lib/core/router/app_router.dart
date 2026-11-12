@@ -109,6 +109,7 @@ GoRouter createAppRouter({String initialLocation = AppRoutes.clientLogin}) {
           (s) => ChatPage(role: role, id: s.pathParameters['id']!),
         ),
         _route('/${role.path}/profile', (_) => ProfilePage(role: role)),
+        _route('/${role.path}/support', (_) => SupportChatPage(role: role)),
       ],
       for (final role in [AppRole.client, AppRole.staff])
         _route(

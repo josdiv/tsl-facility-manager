@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:get_it/get_it.dart';
+import 'package:go_router/go_router.dart';
 import 'package:tsl_facility_manager/app/app.dart';
 import 'package:tsl_facility_manager/core/di/injection.dart';
 import 'package:tsl_facility_manager/core/router/app_routes.dart';
@@ -68,6 +69,7 @@ final routes = <String>[
   for (final role in AppRole.values) ...[
     AppRoutes.chat(role, 'WO-1048'),
     AppRoutes.profile(role),
+    AppRoutes.support(role),
     AppRoutes.conversations(role),
     AppRoutes.notifications(role),
   ],
@@ -168,7 +170,9 @@ void main() {
 
     await tapText(tester, 'Clock');
     await tapText(tester, 'Verify & clock in');
-    expect(find.text('You’re on the clock'), findsOneWidget);
+    // A successful clock-in takes staff straight to their tasks.
+    expect(find.text('Assigned tasks'), findsOneWidget);
+    expect(find.text('Shift started · GPS verified'), findsOneWidget);
 
     // Open the task from its alert: in the evening its due time falls on
     // tomorrow, which moves it from the Today tab to Upcoming.
@@ -322,10 +326,11 @@ void main() {
   testWidgets('a refused reading never shows an active shift', (tester) async {
     await pumpApp(tester, AppRoutes.staffClock);
     await tapText(tester, 'Verify & clock in');
-    expect(find.text('You’re on the clock'), findsOneWidget);
+    expect(find.text('Assigned tasks'), findsOneWidget);
 
-    await tapText(tester, 'EO');
-    await tapText(tester, 'Clock-in: outside the geofence');
+    GoRouter.of(tester.element(find.text('Assigned tasks')))
+        .push(AppRoutes.previewGps('outside'));
+    await tester.pumpAndSettle();
     expect(find.text('Start your shift'), findsOneWidget);
     expect(find.text('You’re on the clock'), findsNothing);
     expect(find.text('Clocked in at'), findsNothing);
@@ -341,6 +346,91 @@ void main() {
     await tapText(tester, 'Submit requisition');
     expect(find.text('REQ-082 submitted for admin approval'), findsOneWidget);
     expect(find.textContaining('Today ('), findsOneWidget);
+  });
+
+  testWidgets('a supervisor stays on attendance after clocking in', (
+    tester,
+  ) async {
+    await pumpApp(tester, AppRoutes.supervisorClock);
+    await tapText(tester, 'Verify & clock in');
+    expect(find.text('You’re on the clock'), findsOneWidget);
+  });
+
+  group('profile', () {
+    Future<void> openProfile(WidgetTester tester, String home) async {
+      await pumpApp(tester, home, size: const Size(360, 1600));
+      await tester.tap(find.byTooltip('Profile'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('a client can choose their facility', (tester) async {
+      await openProfile(tester, AppRoutes.clientHome);
+      expect(find.text('Facility'), findsOneWidget);
+      expect(find.byType(DropdownButtonFormField<String>), findsOneWidget);
+      expect(find.text('daniel@example.com'), findsOneWidget);
+      expect(find.text('Design previews'), findsNothing);
+
+      await tapText(tester, 'Marina Towers, Lagos');
+      await tapText(tester, 'Cedar Court, Abuja');
+      await tapText(tester, 'Save changes');
+      expect(find.text('Profile updated'), findsOneWidget);
+
+      // The choice is kept when the profile is opened again.
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Profile'));
+      await tester.pumpAndSettle();
+      expect(find.text('Cedar Court, Abuja'), findsOneWidget);
+    });
+
+    for (final role in [AppRole.staff, AppRole.supervisor]) {
+      testWidgets('${role.label} sees an assigned, read-only facility', (
+        tester,
+      ) async {
+        await openProfile(tester, AppRoutes.home(role));
+        expect(find.byType(DropdownButtonFormField<String>), findsNothing);
+        expect(find.text('Marina Towers, Lagos'), findsOneWidget);
+        expect(
+          find.text('Your facility is assigned by your administrator.'),
+          findsOneWidget,
+        );
+        expect(find.text('Message support'), findsOneWidget);
+        expect(find.text('Sign out'), findsOneWidget);
+      });
+    }
+
+    testWidgets('an edited name updates the avatar everywhere', (tester) async {
+      await openProfile(tester, AppRoutes.staffHome);
+      await enterField(tester, 'Name', 'Grace Eze');
+      await tapText(tester, 'Save changes');
+      expect(find.text('GE'), findsWidgets);
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.text('GE'), findsOneWidget);
+      expect(find.text('EO'), findsNothing);
+    });
+
+    testWidgets('name and phone are validated', (tester) async {
+      await openProfile(tester, AppRoutes.staffHome);
+      await enterField(tester, 'Name', '');
+      await enterField(tester, 'Phone', '12ab');
+      await tapText(tester, 'Save changes');
+      expect(find.text('Enter your name'), findsOneWidget);
+      expect(find.text('Enter a valid phone number'), findsOneWidget);
+      expect(find.text('Profile updated'), findsNothing);
+    });
+
+    testWidgets('message support opens a support conversation', (tester) async {
+      await openProfile(tester, AppRoutes.clientHome);
+      await tapText(tester, 'Message support');
+      expect(find.textContaining('TSL support'), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField), 'The app froze');
+      await tester.tap(find.byTooltip('Send message'));
+      await tester.pumpAndSettle();
+      expect(find.text('The app froze'), findsOneWidget);
+    });
   });
 
   testWidgets('sign out returns to the right login', (tester) async {

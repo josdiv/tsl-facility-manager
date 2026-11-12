@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+
+import '../../features/profile/presentation/profile_cubit.dart';
 
 import '../constants/app_constants.dart';
 import '../router/app_routes.dart';
@@ -8,12 +11,6 @@ import '../theme/app_colors.dart';
 import 'initials_avatar.dart';
 
 const pagePadding = EdgeInsets.fromLTRB(16, 16, 16, 24);
-
-String sampleInitials(AppRole role) => switch (role) {
-  AppRole.client => 'DC',
-  AppRole.staff => 'EO',
-  AppRole.supervisor => 'SJ',
-};
 
 /// A top-level screen inside a role's bottom navigation.
 class TabPage extends StatelessWidget {
@@ -141,7 +138,11 @@ class RoleHeaderActions extends StatelessWidget {
             onTap: () => context.push(AppRoutes.profile(role)),
             child: Padding(
               padding: const EdgeInsets.all(4),
-              child: InitialsAvatar(sampleInitials(role)),
+              child: InitialsAvatar(
+                context.select<ProfileCubit, String>(
+                  (cubit) => cubit.of(role).initials,
+                ),
+              ),
             ),
           ),
         ),

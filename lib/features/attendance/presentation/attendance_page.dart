@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../../core/router/app_routes.dart';
 
 import '../../../core/session/app_role.dart';
 import '../../../core/theme/app_colors.dart';
@@ -138,10 +141,11 @@ class _AttendanceBody extends StatelessWidget {
           )
         else
           FilledButton(
-            onPressed: () => clock(
-              'Shift started · GPS verified',
-              () => cubit.clockIn(role),
-            ),
+            onPressed: () {
+              clock('Shift started · GPS verified', () => cubit.clockIn(role));
+              // Staff start their shift by picking up work.
+              if (role == AppRole.staff) context.go(AppRoutes.staffTasks);
+            },
             child: const Text('Verify & clock in'),
           ),
       ],

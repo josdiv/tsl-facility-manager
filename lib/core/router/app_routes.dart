@@ -36,6 +36,7 @@ abstract final class AppRoutes {
       ? supervisorAlerts
       : '/${role.path}/notifications';
   static String profile(AppRole role) => '/${role.path}/profile';
+  static String support(AppRole role) => '/${role.path}/support';
 
   static String previewGps(String state) => '/preview/gps/$state';
   static String previewAccount(String state) => '/preview/account/$state';

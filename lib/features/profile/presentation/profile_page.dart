@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/router/app_routes.dart';
@@ -7,93 +8,133 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/initials_avatar.dart';
 import '../../../core/widgets/key_value_row.dart';
+import '../../../core/widgets/labelled_field.dart';
 import '../../../core/widgets/page_frames.dart';
-import '../../../core/widgets/section_header.dart';
+import '../domain/user_profile.dart';
+import 'profile_cubit.dart';
 
-/// Gap in the design: no screen offered profile details or sign out.
-class ProfilePage extends StatelessWidget {
+/// Name and phone are editable for everyone. Clients choose their facility;
+/// staff and supervisors see the one their administrator assigned.
+class ProfilePage extends StatefulWidget {
   const ProfilePage({required this.role, super.key});
 
   final AppRole role;
 
-  (String, String) get _identity => switch (role) {
-    AppRole.client => ('Daniel Clarke', 'daniel@example.com'),
-    AppRole.staff => ('Emeka Okafor', 'emeka@thickservices.com'),
-    AppRole.supervisor => ('Sarah James', 'sarah@thickservices.com'),
-  };
+  @override
+  State<ProfilePage> createState() => _ProfilePageState();
+}
+
+class _ProfilePageState extends State<ProfilePage> {
+  final _form = GlobalKey<FormState>();
+  late final UserProfile _initial = context.read<ProfileCubit>().of(
+    widget.role,
+  );
+  late final _name = TextEditingController(text: _initial.name);
+  late final _phone = TextEditingController(text: _initial.phone);
+  late String _facility = _initial.facility;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _phone.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    if (!_form.currentState!.validate()) return;
+    context.read<ProfileCubit>().save(
+      widget.role,
+      name: _name.text,
+      phone: _phone.text,
+      facility: _facility,
+    );
+    FocusManager.instance.primaryFocus?.unfocus();
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('Profile updated')));
+  }
 
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
-    final (name, email) = _identity;
+    final profile = context.select<ProfileCubit, UserProfile>(
+      (cubit) => cubit.of(widget.role),
+    );
     return DetailPage(
       title: 'Profile',
       children: [
-        AppCard(
+        Center(child: InitialsAvatar(profile.initials, size: 64)),
+        const SizedBox(height: 10),
+        Text(profile.name, textAlign: TextAlign.center, style: text.titleLarge),
+        const SizedBox(height: 2),
+        Text(
+          widget.role.label,
+          textAlign: TextAlign.center,
+          style: text.bodyMedium,
+        ),
+        const SizedBox(height: 20),
+        Form(
+          key: _form,
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              InitialsAvatar(sampleInitials(role), size: 64),
-              const SizedBox(height: 12),
-              Text(name, style: text.titleLarge),
-              const SizedBox(height: 2),
-              Text(role.label, style: text.bodyMedium),
-              const SizedBox(height: 8),
-              KeyValueRow('Email', email),
-              const KeyValueRow('Facility', 'Marina Towers, Lagos'),
+              LabelledTextField(
+                label: 'Name',
+                controller: _name,
+                validator: (value) => requiredText(value, 'Enter your name'),
+              ),
+              LabelledTextField(
+                label: 'Phone',
+                controller: _phone,
+                keyboardType: TextInputType.phone,
+                validator: phoneText,
+              ),
+              AppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    KeyValueRow('Email', profile.email),
+                    if (!canChooseFacility(widget.role)) ...[
+                      KeyValueRow('Facility', profile.facility),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Your facility is assigned by your administrator.',
+                        style: text.bodySmall,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (canChooseFacility(widget.role))
+                LabelledDropdown(
+                  label: 'Facility',
+                  options: sampleFacilities,
+                  initialValue: _facility,
+                  onChanged: (value) => _facility = value,
+                ),
+              FilledButton(onPressed: _save, child: const Text('Save changes')),
             ],
           ),
         ),
-        const SectionHeader('Design previews'),
-        Text(
-          'Edge cases for review during the UI phase. These appear on their '
-          'own once the app is connected.',
-          style: text.bodyMedium,
+        const SizedBox(height: 20),
+        AppCard(
+          onTap: () => context.push(AppRoutes.support(widget.role)),
+          child: Row(
+            children: [
+              const Icon(Icons.support_agent, color: AppColors.primary),
+              const SizedBox(width: 12),
+              Expanded(child: Text('Message support', style: text.titleSmall)),
+              const Icon(Icons.chevron_right, color: AppColors.muted),
+            ],
+          ),
         ),
-        const SizedBox(height: 8),
-        _PreviewLink(
-          'Clock-in: outside the geofence',
-          AppRoutes.previewGps('outside'),
-        ),
-        _PreviewLink('Clock-in: weak GPS', AppRoutes.previewGps('weakSignal')),
-        _PreviewLink(
-          'Clock-in: location permission off',
-          AppRoutes.previewGps('permissionOff'),
-        ),
-        _PreviewLink('Account locked', AppRoutes.previewAccount('locked')),
-        _PreviewLink('Account disabled', AppRoutes.previewAccount('disabled')),
-        const _PreviewLink('Monthly limit reached', AppRoutes.previewLimit),
-        const _PreviewLink('Upload failed', AppRoutes.previewConnection),
-        const SizedBox(height: 12),
+        const SizedBox(height: 4),
         OutlinedButton.icon(
           style: OutlinedButton.styleFrom(foregroundColor: AppColors.danger),
-          onPressed: () => context.go(AppRoutes.login(role)),
+          onPressed: () => context.go(AppRoutes.login(widget.role)),
           icon: const Icon(Icons.logout),
           label: const Text('Sign out'),
         ),
       ],
-    );
-  }
-}
-
-class _PreviewLink extends StatelessWidget {
-  const _PreviewLink(this.label, this.route);
-
-  final String label;
-  final String route;
-
-  @override
-  Widget build(BuildContext context) {
-    return AppCard(
-      margin: const EdgeInsets.only(bottom: 8),
-      onTap: () => context.push(route),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(label, style: Theme.of(context).textTheme.titleSmall),
-          ),
-          const Icon(Icons.chevron_right, color: AppColors.muted),
-        ],
-      ),
     );
   }
 }

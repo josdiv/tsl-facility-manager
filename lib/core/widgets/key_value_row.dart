@@ -23,7 +23,10 @@ class KeyValueRow extends StatelessWidget {
             child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
           ),
           const SizedBox(width: 12),
+          // Values (emails, distances) run longer than labels, so they get
+          // more of the row before wrapping.
           Expanded(
+            flex: 2,
             child: Text(
               value,
               textAlign: TextAlign.end,
