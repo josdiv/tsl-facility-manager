@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "745444148924",
+    "project_id": "tsl-facility-manager",
+    "storage_bucket": "tsl-facility-manager.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:745444148924:android:8f88305dccbe2bd74db2b9",
+        "android_client_info": {
+          "package_name": "com.dawnglobalict.tslfacilitymanager"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA-Il4AXSbDb5AKiQ-pDbrlAVhiauw8Lbg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
