@@ -112,6 +112,15 @@ class InMemoryWorkOrderRepository implements WorkOrderRepository {
     return id;
   }
 
+  /// Keeps the conversation list current, as the onWorkOrderMessage Cloud
+  /// Function does in Firestore.
+  void recordMessage(String id, String preview, DateTime at) {
+    final index = _orders.indexWhere((o) => o.id == id);
+    if (index == -1) return;
+    _orders[index] = _orders[index].withLastMessage(preview, at);
+    _changes.add(_snapshot);
+  }
+
   @override
   Future<List<Zone>> zones(String locationId) async =>
       _zones[locationId] ?? const [];

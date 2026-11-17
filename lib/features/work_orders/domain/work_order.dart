@@ -67,6 +67,8 @@ class WorkOrder extends Equatable {
     this.inspectionChecks = const [],
     this.inspectionMedia = const [],
     this.assignmentNote,
+    this.lastMessageAt,
+    this.lastMessagePreview,
     this.history = const [],
   });
 
@@ -101,6 +103,10 @@ class WorkOrder extends Equatable {
 
   /// The supervisor's note to the technician from the last reassignment.
   final String? assignmentNote;
+
+  /// The latest chat message on this order, for the conversation list.
+  final DateTime? lastMessageAt;
+  final String? lastMessagePreview;
   final List<WorkOrderEvent> history;
 
   /// Staff can only change work that is in hand or was returned to them.
@@ -223,6 +229,10 @@ class WorkOrder extends Equatable {
   WorkOrder withHistory(List<WorkOrderEvent> history) =>
       _copy(history: history);
 
+  /// The same order with a newer latest message.
+  WorkOrder withLastMessage(String preview, DateTime at) =>
+      _copy(lastMessagePreview: preview, lastMessageAt: at);
+
   WorkOrder _copy({
     WorkOrderStatus? status,
     String? assignee,
@@ -232,6 +242,8 @@ class WorkOrder extends Equatable {
     String? zoneId,
     List<String>? inspectionChecks,
     List<String>? inspectionMedia,
+    DateTime? lastMessageAt,
+    String? lastMessagePreview,
     String? workNote,
     List<String>? workMedia,
     DateTime? submittedAt,
@@ -269,6 +281,8 @@ class WorkOrder extends Equatable {
       inspectionNote: inspectionNote ?? this.inspectionNote,
       inspectionChecks: inspectionChecks ?? this.inspectionChecks,
       inspectionMedia: inspectionMedia ?? this.inspectionMedia,
+      lastMessageAt: lastMessageAt ?? this.lastMessageAt,
+      lastMessagePreview: lastMessagePreview ?? this.lastMessagePreview,
       assignmentNote: clearAssignmentNote
           ? null
           : assignmentNote ?? this.assignmentNote,
@@ -304,6 +318,8 @@ class WorkOrder extends Equatable {
     inspectionChecks,
     inspectionMedia,
     assignmentNote,
+    lastMessageAt,
+    lastMessagePreview,
     history,
   ];
 }

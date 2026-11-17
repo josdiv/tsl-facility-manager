@@ -322,6 +322,25 @@ void main() {
     expect(find.text('Welcome back.'), findsOneWidget);
   });
 
+  testWidgets('conversations list newest first and follow new messages', (
+    tester,
+  ) async {
+    await pumpApp(tester, AppRoutes.clientMessages);
+    double top(String title) => tester.getTopLeft(find.text(title)).dy;
+    // WO-1039's message is newer than WO-1048's in the sample data.
+    expect(top('Washroom tap leakage'), lessThan(top('AHU-02 cooling fault')));
+
+    await tapText(tester, 'AHU-02 cooling fault');
+    await tester.enterText(find.byType(TextField), 'Still warm in here');
+    await tester.tap(find.byTooltip('Send message'));
+    await tester.pumpAndSettle();
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Still warm in here'), findsOneWidget);
+    expect(top('AHU-02 cooling fault'), lessThan(top('Washroom tap leakage')));
+  });
+
   testWidgets('a sent message appears in the conversation', (tester) async {
     await pumpApp(tester, AppRoutes.chat(AppRole.client, 'WO-1048'));
     await tester.enterText(find.byType(TextField), 'Any update?');

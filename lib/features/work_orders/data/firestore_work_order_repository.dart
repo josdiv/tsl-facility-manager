@@ -32,6 +32,9 @@ class FirestoreWorkOrderRepository implements WorkOrderRepository {
   CollectionReference<Map<String, dynamic>> get _orders =>
       _db.collection('workOrders');
 
+  /// The document ID behind a reference, once the order has been loaded.
+  String? docIdFor(String ref) => _docIds[ref];
+
   @override
   Stream<List<WorkOrder>> watch(UserProfile? user) {
     if (user == null) return Stream.value(const []);
@@ -233,6 +236,8 @@ WorkOrder? workOrderFromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     inspectionChecks: List<String>.from(d['inspectionChecks'] as List? ?? []),
     inspectionMedia: _names(d['inspectionPhotos']),
     assignmentNote: d['assignmentNote'] as String?,
+    lastMessageAt: _date(d['lastMessageAt']),
+    lastMessagePreview: d['lastMessagePreview'] as String?,
   );
 }
 

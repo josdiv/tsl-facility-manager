@@ -5,7 +5,9 @@ import '../../features/auth/data/firebase_auth_repository.dart';
 import '../../features/auth/data/sample_auth_repository.dart';
 import '../../features/auth/domain/auth_repository.dart';
 import '../../features/auth/presentation/session_cubit.dart';
-import '../../features/messaging/presentation/messaging_pages.dart';
+import '../../features/messaging/data/firestore_chat_repository.dart';
+import '../../features/messaging/data/in_memory_chat_repository.dart';
+import '../../features/messaging/domain/chat.dart';
 import '../../features/parts/presentation/requisitions_cubit.dart';
 import '../../features/profile/presentation/profile_cubit.dart';
 import '../../features/work_orders/data/firestore_work_order_repository.dart';
@@ -19,6 +21,30 @@ final GetIt sl = GetIt.instance;
 /// on in-memory sample data and no sign-in is enforced, as the widget tests
 /// and `--dart-define=SAMPLE_DATA=true` builds expect.
 void configureDependencies({bool useFirebase = false}) {
+  if (useFirebase) {
+    sl
+      ..registerLazySingleton(FirestoreWorkOrderRepository.new)
+      ..registerLazySingleton<WorkOrderRepository>(
+        sl<FirestoreWorkOrderRepository>,
+      )
+      ..registerLazySingleton<ChatRepository>(
+        () => FirestoreChatRepository(
+          workOrderDocId: sl<FirestoreWorkOrderRepository>().docIdFor,
+        ),
+      );
+  } else {
+    sl
+      ..registerLazySingleton(InMemoryWorkOrderRepository.new)
+      ..registerLazySingleton<WorkOrderRepository>(
+        sl<InMemoryWorkOrderRepository>,
+      )
+      ..registerLazySingleton<ChatRepository>(
+        () => InMemoryChatRepository(
+          workOrders: sl<InMemoryWorkOrderRepository>(),
+        ),
+      );
+  }
+
   sl
     ..registerLazySingleton<AuthRepository>(
       useFirebase ? FirebaseAuthRepository.new : SampleAuthRepository.new,
@@ -26,11 +52,6 @@ void configureDependencies({bool useFirebase = false}) {
     ..registerLazySingleton(
       () => SessionCubit(sl(), enforced: useFirebase),
       dispose: (cubit) => cubit.close(),
-    )
-    ..registerLazySingleton<WorkOrderRepository>(
-      useFirebase
-          ? FirestoreWorkOrderRepository.new
-          : InMemoryWorkOrderRepository.new,
     )
     ..registerFactory(
       () => WorkOrdersBloc(
@@ -40,7 +61,6 @@ void configureDependencies({bool useFirebase = false}) {
       ),
     )
     ..registerFactory(AttendanceCubit.new)
-    ..registerFactory(MessagesCubit.new)
     ..registerFactory(
       () => ProfileCubit(auth: useFirebase ? sl<AuthRepository>() : null),
     )

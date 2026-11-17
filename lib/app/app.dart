@@ -10,7 +10,7 @@ import '../core/theme/app_theme.dart';
 import '../features/attendance/presentation/attendance_page.dart';
 import '../features/auth/domain/auth_repository.dart';
 import '../features/auth/presentation/session_cubit.dart';
-import '../features/messaging/presentation/messaging_pages.dart';
+import '../features/messaging/domain/chat.dart';
 import '../features/parts/presentation/requisitions_cubit.dart';
 import '../features/profile/presentation/profile_cubit.dart';
 import '../features/work_orders/domain/work_order_repository.dart';
@@ -45,6 +45,7 @@ class _TslFacilityManagerAppState extends State<TslFacilityManagerApp> {
         RepositoryProvider<WorkOrderRepository>.value(
           value: sl<WorkOrderRepository>(),
         ),
+        RepositoryProvider<ChatRepository>.value(value: sl<ChatRepository>()),
       ],
       child: _providers(),
     );
@@ -58,7 +59,6 @@ class _TslFacilityManagerAppState extends State<TslFacilityManagerApp> {
           create: (_) => sl<WorkOrdersBloc>()..add(const WorkOrdersRequested()),
         ),
         BlocProvider(create: (_) => sl<AttendanceCubit>()),
-        BlocProvider(create: (_) => sl<MessagesCubit>()),
         BlocProvider(create: (_) => sl<ProfileCubit>()),
         BlocProvider(create: (_) => sl<RequisitionsCubit>()),
       ],
