@@ -17,7 +17,7 @@ import '../features/auth/domain/auth_repository.dart';
 import '../features/auth/presentation/session_cubit.dart';
 import '../features/messaging/domain/chat.dart';
 import '../features/notifications/domain/notifications.dart';
-import '../features/parts/presentation/requisitions_cubit.dart';
+import '../features/parts/domain/requisition.dart';
 import '../features/profile/presentation/profile_cubit.dart';
 import '../features/work_orders/domain/work_order_repository.dart';
 import '../features/work_orders/presentation/bloc/work_orders_bloc.dart';
@@ -73,6 +73,7 @@ class _TslFacilityManagerAppState extends State<TslFacilityManagerApp> {
         ),
         RepositoryProvider<LocationService>.value(value: sl<LocationService>()),
         RepositoryProvider<PhotoService>.value(value: sl<PhotoService>()),
+        RepositoryProvider<PartsRepository>.value(value: sl<PartsRepository>()),
         RepositoryProvider<NotificationRepository>.value(
           value: sl<NotificationRepository>(),
         ),
@@ -90,7 +91,6 @@ class _TslFacilityManagerAppState extends State<TslFacilityManagerApp> {
         ),
         BlocProvider(create: (_) => sl<AttendanceCubit>()),
         BlocProvider(create: (_) => sl<ProfileCubit>()),
-        BlocProvider(create: (_) => sl<RequisitionsCubit>()),
       ],
       child: MaterialApp.router(
         title: AppConstants.appName,

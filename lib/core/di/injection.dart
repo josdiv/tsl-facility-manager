@@ -18,7 +18,9 @@ import '../../features/notifications/data/fcm_push_service.dart';
 import '../../features/notifications/data/firestore_notification_repository.dart';
 import '../../features/notifications/data/sample_notifications.dart';
 import '../../features/notifications/domain/notifications.dart';
-import '../../features/parts/presentation/requisitions_cubit.dart';
+import '../../features/parts/data/firestore_parts_repository.dart';
+import '../../features/parts/data/in_memory_parts_repository.dart';
+import '../../features/parts/domain/requisition.dart';
 import '../../features/profile/presentation/profile_cubit.dart';
 import '../../features/work_orders/data/firestore_work_order_repository.dart';
 import '../../features/work_orders/data/in_memory_work_order_repository.dart';
@@ -52,7 +54,12 @@ void configureDependencies({bool useFirebase = false}) {
       ..registerLazySingleton<NotificationRepository>(
         FirestoreNotificationRepository.new,
       )
-      ..registerLazySingleton<PushService>(FcmPushService.new);
+      ..registerLazySingleton<PushService>(FcmPushService.new)
+      ..registerLazySingleton<PartsRepository>(
+        () => FirestorePartsRepository(
+          workOrderDocId: sl<FirestoreWorkOrderRepository>().docIdFor,
+        ),
+      );
   } else {
     sl
       ..registerLazySingleton<PhotoService>(SamplePhotoService.new)
@@ -74,7 +81,8 @@ void configureDependencies({bool useFirebase = false}) {
       ..registerLazySingleton<NotificationRepository>(
         InMemoryNotificationRepository.new,
       )
-      ..registerLazySingleton<PushService>(() => const NoPushService());
+      ..registerLazySingleton<PushService>(() => const NoPushService())
+      ..registerLazySingleton<PartsRepository>(InMemoryPartsRepository.new);
   }
 
   sl
@@ -100,6 +108,5 @@ void configureDependencies({bool useFirebase = false}) {
     )
     ..registerFactory(
       () => ProfileCubit(auth: useFirebase ? sl<AuthRepository>() : null),
-    )
-    ..registerFactory(RequisitionsCubit.new);
+    );
 }

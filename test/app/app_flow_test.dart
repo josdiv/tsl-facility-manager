@@ -401,7 +401,8 @@ void main() {
     await enterField(tester, 'Quantity', '2');
     await enterField(tester, 'Reason', 'Replace damaged filters');
     await tapText(tester, 'Submit requisition');
-    expect(find.text('REQ-082 submitted for admin approval'), findsOneWidget);
+    expect(find.text('Request submitted for admin approval'), findsOneWidget);
+    expect(find.textContaining('REQ-082'), findsOneWidget);
     expect(find.text('2 × HVAC air filter'), findsOneWidget);
     expect(find.text('Pending approval'), findsOneWidget);
   });

@@ -164,7 +164,14 @@ export const onWorkOrderWrite = onDocumentWritten(
         note: after.type === 'sla' ? 'Scheduled by SLA plan' : null,
         photos: after.reportPhotos ?? [],
       });
-      if (after.type === 'client') {
+      if (after.type === 'sla') {
+        await notify([after.assignedToId], {
+          kind: 'sla_due',
+          title: 'SLA task due',
+          body: `${after.ref} ${after.title} · ${after.locationName}`,
+          ...about,
+        });
+      } else {
         await notify(await supervisorsOf(after), {
           kind: 'system',
           title: 'New request',

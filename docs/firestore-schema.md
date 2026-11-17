@@ -426,18 +426,23 @@ Work order photos must be images under 10 MB. Documents can be up to 25 MB.
 
 | Function | Kind | What it does |
 | --- | --- | --- |
-| `sendEmailCode` | Callable | Emails a 6-digit code to a client. Stores only a hash in `emailCodes`. Rate-limited |
-| `verifyEmailCode` | Callable | Checks the code and returns a Firebase custom token for the app to sign in with |
-| `createUser` | Callable, admin | Creates the Auth account and the `users` document. Sends staff a password-setup email |
-| `reportIssue` | Callable, client | Checks the company status and monthly limit, assigns `WO-` ref and creates the work order |
-| `createWorkOrder` | Callable, admin | Same, for work orders raised from the dashboard |
-| `clockIn` / `clockOut` | Callable, staff and supervisor | Checks the distance to the facility and writes `attendance` and `users.onShift` |
-| `actionRequisition` | Callable, admin | Approves or rejects a requisition and updates stock |
-| `onWorkOrderWrite` | Trigger | Writes `events` and sends notifications |
-| `onMessageCreate` | Trigger | Updates `lastMessage*` and notifies people |
+| `sendEmailCode` | Callable | Emails a 6-digit code to a client through the company mail API. Stores only a hash in `emailCodes`. One email a minute |
+| `verifyEmailCode` | Callable | Checks the code (5 tries, 10 minutes) and returns a Firebase custom token for the app to sign in with |
+| `createUser` | Callable, admin | Creates the Auth account and the `users` document. Emails staff a password-setup link |
+| `reportIssue` | Callable, client | Checks the company status and monthly limit, assigns the `WO-` ref and creates the work order |
+| `createWorkOrder` | Callable, admin | Creates a work order from the dashboard, with the next `WO-` ref and copied names |
+| `clockIn` / `clockOut` | Callable, staff and supervisor | Checks the distance to the facility and writes `attendance` and `users.onShift`. Refuses fake-GPS readings |
+| `actionRequisition` | Callable, admin | Approves or rejects a requisition. Approving changes the stock and `stockStatus` in the same transaction |
+| `onWorkOrderWrite` | Trigger | Writes `events` and notifies the people involved |
+| `onWorkOrderMessage` / `onSupportMessage` | Trigger | Update the latest-message fields and notify people |
+| `onRequisitionCreated` | Trigger | Numbers the request (`REQ-`) and notifies the facility's supervisors |
+| `assignAssetRef` / `assignInventoryRef` | Trigger | Give new assets and stock items their `AST-` / `SKU-` refs |
 | `onUserNameChange` | Trigger | Updates copied names (see below) |
-| `runSlaSchedules` | Scheduled, every 15 minutes | Creates SLA work orders and moves `nextRunAt` on |
-| `assignRefs` | Trigger | Gives `ref` numbers to new assets and inventory items |
+| `onSlaScheduleWrite` | Trigger | Sets `nextRunAt` when a schedule is created or switched back on |
+| `runSlaSchedules` | Scheduled, every 15 minutes | Creates each SLA work order 12 hours before it's due, notifies the technician, and moves `nextRunAt` on |
+
+Notifications go to `users/{uid}/notifications` and, as a push, through the
+company push API to every token in `users/{uid}/fcmTokens`.
 
 ## Copied names
 

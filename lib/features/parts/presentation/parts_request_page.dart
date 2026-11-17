@@ -14,8 +14,8 @@ import '../../profile/presentation/profile_cubit.dart';
 import '../../work_orders/data/sample_work_orders.dart';
 import '../../work_orders/presentation/bloc/work_orders_bloc.dart';
 import '../../work_orders/presentation/widgets/work_order_scope.dart';
+import '../../work_orders/domain/work_order.dart';
 import '../domain/requisition.dart';
-import 'requisitions_cubit.dart';
 
 /// Checks a requested quantity against what the location has in stock.
 String? quantityError(String? value, int stock) {
@@ -32,12 +32,31 @@ BadgeTone _toneFor(RequisitionStatus status) => switch (status) {
 };
 
 /// The Parts tab: the technician's requests and their approval status.
-class PartsListPage extends StatelessWidget {
+class PartsListPage extends StatefulWidget {
   const PartsListPage({super.key});
 
   @override
+  State<PartsListPage> createState() => _PartsListPageState();
+}
+
+class _PartsListPageState extends State<PartsListPage> {
+  String? _uid;
+  Stream<List<Requisition>> _requests = const Stream.empty();
+
+  @override
   Widget build(BuildContext context) {
-    final requests = context.watch<RequisitionsCubit>().state;
+    final me = context.profileOf(AppRole.staff);
+    if (me.uid != _uid) {
+      _uid = me.uid;
+      _requests = context.read<PartsRepository>().watchRequests(me);
+    }
+    return StreamBuilder<List<Requisition>>(
+      stream: _requests,
+      builder: (context, snapshot) => _list(context, snapshot.data ?? const []),
+    );
+  }
+
+  Widget _list(BuildContext context, List<Requisition> requests) {
     final text = Theme.of(context).textTheme;
     final now = DateTime.now();
     return TabPage(
@@ -68,7 +87,13 @@ class PartsListPage extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        [request.ref, ?request.workOrderId].join(' · '),
+                        [
+                          if (request.ref.isEmpty)
+                            'New request'
+                          else
+                            request.ref,
+                          ?request.workOrderId,
+                        ].join(' · '),
                         style: text.bodySmall,
                       ),
                     ),
@@ -114,18 +139,19 @@ class PartsRequestPage extends StatefulWidget {
 }
 
 class _PartsRequestPageState extends State<PartsRequestPage> {
-  static const _items = {
-    'HVAC air filter': 24,
-    'LED panel': 8,
-    'Generator oil': 6,
-  };
   static const _noOrder = 'None · general stock';
 
   final _form = GlobalKey<FormState>();
   final _quantity = TextEditingController();
   final _reason = TextEditingController();
-  var _item = _items.keys.first;
+  late final Stream<List<StockItem>> _stock = context
+      .read<PartsRepository>()
+      .watchStock(
+        context.read<ProfileCubit>().of(AppRole.staff).locationId ?? '',
+      );
+  String? _itemId;
   late String? _workOrderId = widget.workOrderId;
+  var _sending = false;
 
   @override
   void dispose() {
@@ -134,21 +160,27 @@ class _PartsRequestPageState extends State<PartsRequestPage> {
     super.dispose();
   }
 
-  void _submit() {
-    if (!_form.currentState!.validate()) return;
-    final ref = context.read<RequisitionsCubit>().submit(
-      itemName: _item,
-      quantity: int.parse(_quantity.text.trim()),
-      reason: _reason.text.trim(),
-      workOrderId: _workOrderId,
-    );
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$ref submitted for admin approval')),
-    );
-    if (context.canPop()) {
-      context.pop();
-    } else {
-      context.go(AppRoutes.staffParts);
+  Future<void> _submit(StockItem? item) async {
+    if (_sending || item == null || !_form.currentState!.validate()) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final router = GoRouter.of(context);
+    setState(() => _sending = true);
+    try {
+      await context.read<PartsRepository>().request(
+        context.read<ProfileCubit>().of(AppRole.staff),
+        item: item,
+        quantity: int.parse(_quantity.text.trim()),
+        reason: _reason.text.trim(),
+        workOrderId: _workOrderId,
+      );
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Request submitted for admin approval')),
+      );
+      router.canPop() ? router.pop() : router.go(AppRoutes.staffParts);
+    } on PartsFailure catch (failure) {
+      messenger.showSnackBar(SnackBar(content: Text(failure.message)));
+    } finally {
+      if (mounted) setState(() => _sending = false);
     }
   }
 
@@ -166,7 +198,23 @@ class _PartsRequestPageState extends State<PartsRequestPage> {
       return order == null ? id : '${order.id} · ${order.title}';
     }
 
-    final stock = _items[_item]!;
+    return StreamBuilder<List<StockItem>>(
+      stream: _stock,
+      builder: (context, snapshot) =>
+          _buildForm(context, orders, labelFor, snapshot.data ?? const []),
+    );
+  }
+
+  Widget _buildForm(
+    BuildContext context,
+    List<WorkOrder> orders,
+    String Function(String) labelFor,
+    List<StockItem> items,
+  ) {
+    final text = Theme.of(context).textTheme;
+    final item =
+        items.where((i) => i.id == _itemId).firstOrNull ?? items.firstOrNull;
+    final stock = item?.quantity ?? 0;
     return DetailPage(
       title: 'Request parts',
       children: [
@@ -194,15 +242,26 @@ class _PartsRequestPageState extends State<PartsRequestPage> {
                 label: 'Location',
                 options: [context.profileOf(AppRole.staff).facility],
               ),
-              LabelledDropdown(
-                label: 'Inventory item',
-                options: [
-                  for (final item in _items.entries)
-                    '${item.key} · ${item.value} in stock',
-                ],
-                onChanged: (value) =>
-                    setState(() => _item = value.split(' · ').first),
-              ),
+              if (items.isEmpty)
+                const InfoBanner(
+                  'No stock is recorded at your facility yet.',
+                  icon: Icons.inventory_2_outlined,
+                  tone: BannerTone.warning,
+                )
+              else
+                LabelledDropdown(
+                  label: 'Inventory item',
+                  options: [
+                    for (final i in items) '${i.name} · ${i.quantity} in stock',
+                  ],
+                  onChanged: (value) => setState(
+                    () => _itemId = items
+                        .firstWhere(
+                          (i) => '${i.name} · ${i.quantity} in stock' == value,
+                        )
+                        .id,
+                  ),
+                ),
               LabelledTextField(
                 label: 'Quantity',
                 hint: 'e.g. 2',
@@ -225,7 +284,9 @@ class _PartsRequestPageState extends State<PartsRequestPage> {
                 tone: BannerTone.neutral,
               ),
               FilledButton(
-                onPressed: _submit,
+                onPressed: _sending || item == null
+                    ? null
+                    : () => _submit(item),
                 child: const Text('Submit requisition'),
               ),
             ],
