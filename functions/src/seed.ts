@@ -25,13 +25,28 @@ const people = {
   tunde: { role: 'staff', name: 'Tunde Bakare', email: 'tunde@thickservices.com', locationId: 'marina', designation: 'Electrician' },
   david: { role: 'staff', name: 'David Adeyemi', email: 'david@thickservices.com', locationId: 'marina', designation: 'General maintenance' },
   grace: { role: 'staff', name: 'Grace Eze', email: 'grace@thickservices.com', locationId: 'marina', designation: 'Safety officer' },
-  daniel: { role: 'client', name: 'Daniel Clarke', email: 'daniel@example.com', locationId: 'marina', companyId: 'acme', phone: '+234 803 555 0142' },
+  // Client sign-in codes go to real inboxes through the company mail API.
+  daniel: { role: 'client', name: 'Daniel Clarke', email: 'wilson+client1@dbestdev.com', locationId: 'marina', companyId: 'acme', phone: '+234 803 555 0142' },
+  ngozi: { role: 'client', name: 'Ngozi Obi', email: 'wilson+client2@dbestdev.com', locationId: 'marina', companyId: 'acme' },
+  // Clocks in at the developer's own location (see TEST_LOCATION below).
+  tester: { role: 'staff', name: 'Field Tester', email: 'tester@thickservices.com', locationId: 'test-site', designation: 'Test technician' },
 } as const;
+
+/**
+ * "lat,lng" of a real place to put a Test Facility, so GPS clock-in can be
+ * tried for real. tool/emulators.sh passes it from the untracked
+ * .emulator-test-location file; without it the facility sits in Lagos.
+ */
+const testGeo = (() => {
+  const [lat, lng] = (process.env.TEST_LOCATION ?? '').split(',').map(Number);
+  return Number.isFinite(lat) && Number.isFinite(lng) ? new GeoPoint(lat, lng) : new GeoPoint(6.5244, 3.3792);
+})();
 
 const locations = {
   marina: { name: 'Marina Towers, Lagos', address: '12 Marina Road, Lagos Island', geo: new GeoPoint(6.4515, 3.3886) },
   cedar: { name: 'Cedar Court, Abuja', address: '4 Aguiyi Ironsi Street, Maitama', geo: new GeoPoint(9.0812, 7.4951) },
   harbour: { name: 'Harbour Point, Lekki', address: '1 Admiralty Way, Lekki Phase 1', geo: new GeoPoint(6.4474, 3.4723) },
+  'test-site': { name: 'Test Facility', address: 'Your current location', geo: testGeo },
 };
 
 const zones: Record<string, [string, string][]> = {
@@ -42,6 +57,7 @@ const zones: Record<string, [string, string][]> = {
   ],
   cedar: [['cedar-hall', 'Main hall'], ['cedar-basement', 'Basement plant room'], ['cedar-carpark', 'Car park']],
   harbour: [['harbour-lobby', 'Lobby'], ['harbour-f2', 'Floor 2 offices'], ['harbour-roof', 'Rooftop']],
+  'test-site': [['test-main', 'Main building']],
 };
 const zoneName = (id: string) => Object.values(zones).flat().find(([z]) => z === id)![1];
 
@@ -88,7 +104,7 @@ async function main() {
     batch.set(db.doc(`users/${uid}`), {
       status: 'active', phone: null, designation: null, companyId: null, companyName: null,
       ...p,
-      locationName: p.locationId ? locations[p.locationId].name : null,
+      locationName: p.locationId ? locations[p.locationId as keyof typeof locations].name : null,
       ...(p.role === 'client' ? { companyName: 'Acme Corp Nigeria' } : {}),
       onShift: false, lastLoginAt: null, ...audit,
     });
@@ -96,7 +112,7 @@ async function main() {
 
   batch.set(db.doc('companies/acme'), {
     name: 'Acme Corp Nigeria', status: 'active', monthlyWorkOrderLimit: 20,
-    locationIds: ['marina', 'cedar', 'harbour'], contactEmail: 'facilities@acmecorp.ng', contactPhone: null, ...audit,
+    locationIds: ['marina', 'cedar', 'harbour', 'test-site'], contactEmail: 'facilities@acmecorp.ng', contactPhone: null, ...audit,
   });
 
   for (const [id, l] of Object.entries(locations)) {

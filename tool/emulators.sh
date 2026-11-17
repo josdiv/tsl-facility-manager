@@ -30,6 +30,8 @@ done
 
 # Seed without firing triggers, so the seeded history isn't duplicated.
 curl -sf -X PUT "$hub/functions/disableBackgroundTriggers" >/dev/null
+# .emulator-test-location (untracked) holds "lat,lng" for the Test Facility.
+TEST_LOCATION="$(cat .emulator-test-location 2>/dev/null || true)" \
 FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 \
 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 \
 GCLOUD_PROJECT=tsl-facility-manager \
@@ -42,5 +44,5 @@ if command -v adb >/dev/null && adb get-state >/dev/null 2>&1; then
   echo "Phone tunnels open for ports 9099 8080 9199 5001."
 fi
 
-echo "Backend ready. Staff password: test1234. Client sign-in codes appear in this log."
+echo "Backend ready. Staff password: test1234. Client sign-in codes are emailed via the company mail API."
 wait "$emulators"

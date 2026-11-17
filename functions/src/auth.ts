@@ -2,10 +2,10 @@ import { createHash, randomInt } from 'node:crypto';
 import { Timestamp } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
+import { sendMail } from './mail';
 import {
   auth,
   db,
-  isEmulator,
   REGION,
   requireActiveCompany,
   requireUser,
@@ -63,14 +63,23 @@ export const sendEmailCode = onCall({ region: REGION }, async (request) => {
     expiresAt: Timestamp.fromMillis(Date.now() + CODE_TTL_MS),
   });
 
-  if (isEmulator) {
-    // No email provider in the emulator. Read the code from the logs.
-    logger.info(`Sign-in code for ${email}: ${code}`);
-  } else {
-    // TODO: send through the chosen email provider (Resend, SendGrid, …).
-    logger.error('No email provider configured; sign-in code not sent.');
-    throw new HttpsError('unavailable', 'We couldn’t send the code. Please try again later.');
+  try {
+    await sendMail(
+      email,
+      'Your TSL Facility Manager sign-in code',
+      'Your TSL Facility Manager sign-in code\n\n' +
+        'Enter this code in the app to sign in:\n\n' +
+        code +
+        '\n\nThe code expires in 10 minutes. If you didn’t ask for it, you can ' +
+        'ignore this email.',
+    );
+  } catch (error) {
+    logger.error('sign-in code email failed', error);
+    // Allow an immediate retry, since nothing was delivered.
+    await ref.delete();
+    throw new HttpsError('unavailable', 'We couldn’t send the code. Please try again.');
   }
+  logger.info('sign-in code sent');
   return { sent: true };
 });
 
@@ -160,8 +169,13 @@ export const createUser = onCall({ region: REGION }, async (request) => {
 
   if (role !== 'client') {
     const link = await auth.generatePasswordResetLink(email);
-    if (isEmulator) logger.info(`Password setup link for ${email}: ${link}`);
-    // TODO: email the link through the chosen email provider.
+    await sendMail(
+      email,
+      'Set up your TSL Facility Manager password',
+      'Welcome to TSL Facility Manager\n\n' +
+        'Tap the link below to choose your password, then sign in with ' +
+        `${email}:\n\n${link}`,
+    ).catch((error) => logger.error('password setup email failed', error));
   }
   return { uid: account.uid };
 });
