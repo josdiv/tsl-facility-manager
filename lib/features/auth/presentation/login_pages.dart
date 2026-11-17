@@ -1,12 +1,75 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/firebase/firebase_env.dart';
 import '../../../core/router/app_routes.dart';
 import '../../../core/session/app_role.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/widgets/code_input.dart';
 import '../../../core/widgets/eyebrow.dart';
 import '../../../core/widgets/info_banner.dart';
 import '../../../core/widgets/labelled_field.dart';
+import '../domain/auth_repository.dart';
+import 'session_cubit.dart';
+
+/// Sample mode has no real sign-in, so screens navigate themselves. With
+/// Firebase, the router moves on once the session changes.
+bool _isSample(BuildContext context) =>
+    context.read<SessionCubit>().state.status == SessionStatus.sample;
+
+/// Runs an account action, showing its failure. Locked or disabled company
+/// accounts open their own screen. Returns whether it succeeded.
+Future<bool> _attempt(
+  BuildContext context,
+  Future<void> Function() action,
+) async {
+  try {
+    await action();
+    return true;
+  } on AuthFailure catch (failure) {
+    if (!context.mounted) return false;
+    if (failure.code == 'account-locked' ||
+        failure.code == 'account-disabled') {
+      context.push(
+        AppRoutes.previewAccount(
+          failure.code == 'account-locked' ? 'locked' : 'disabled',
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(failure.message)));
+    }
+    return false;
+  }
+}
+
+/// A full-width button that shows a spinner while [busy].
+class _BusyButton extends StatelessWidget {
+  const _BusyButton({
+    required this.label,
+    required this.busy,
+    required this.onPressed,
+  });
+
+  final String label;
+  final bool busy;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton(
+      onPressed: busy ? null : onPressed,
+      child: busy
+          ? const SizedBox.square(
+              dimension: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : Text(label),
+    );
+  }
+}
 
 /// Decides which experience a staff credential opens. In the UI phase the
 /// sample supervisor account is recognised from its address.
@@ -55,6 +118,7 @@ class ClientLoginPage extends StatefulWidget {
 class _ClientLoginPageState extends State<ClientLoginPage> {
   final _form = GlobalKey<FormState>();
   final _email = TextEditingController();
+  var _busy = false;
 
   @override
   void dispose() {
@@ -62,9 +126,17 @@ class _ClientLoginPageState extends State<ClientLoginPage> {
     super.dispose();
   }
 
-  void _submit() {
-    if (!_form.currentState!.validate()) return;
-    context.push(AppRoutes.emailVerification, extra: _email.text.trim());
+  Future<void> _submit() async {
+    if (_busy || !_form.currentState!.validate()) return;
+    final email = _email.text.trim();
+    setState(() => _busy = true);
+    final sent = await _attempt(
+      context,
+      () => context.read<AuthRepository>().sendEmailCode(email),
+    );
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (sent) context.push(AppRoutes.emailVerification, extra: email);
   }
 
   @override
@@ -93,9 +165,10 @@ class _ClientLoginPageState extends State<ClientLoginPage> {
             onSubmitted: (_) => _submit(),
           ),
         ),
-        FilledButton(
+        _BusyButton(
+          label: 'Send verification code',
+          busy: _busy,
           onPressed: _submit,
-          child: const Text('Send verification code'),
         ),
         const SizedBox(height: 20),
         Text(
@@ -123,17 +196,33 @@ class StaffLoginPage extends StatefulWidget {
 class _StaffLoginPageState extends State<StaffLoginPage> {
   final _form = GlobalKey<FormState>();
   final _email = TextEditingController();
+  final _password = TextEditingController();
   var _hidePassword = true;
+  var _busy = false;
 
   @override
   void dispose() {
     _email.dispose();
+    _password.dispose();
     super.dispose();
   }
 
-  void _submit() {
-    if (!_form.currentState!.validate()) return;
-    context.go(AppRoutes.home(roleForStaffEmail(_email.text)));
+  Future<void> _submit() async {
+    if (_busy || !_form.currentState!.validate()) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() => _busy = true);
+    final signedIn = await _attempt(
+      context,
+      () => context.read<AuthRepository>().signInWithPassword(
+        _email.text,
+        _password.text,
+      ),
+    );
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (signedIn && _isSample(context)) {
+      context.go(AppRoutes.home(roleForStaffEmail(_email.text)));
+    }
   }
 
   @override
@@ -164,6 +253,7 @@ class _StaffLoginPageState extends State<StaffLoginPage> {
               LabelledTextField(
                 label: 'Password',
                 hint: 'Your password',
+                controller: _password,
                 obscureText: _hidePassword,
                 validator: (value) =>
                     requiredText(value, 'Enter your password'),
@@ -191,7 +281,7 @@ class _StaffLoginPageState extends State<StaffLoginPage> {
           ),
         ),
         const SizedBox(height: 8),
-        FilledButton(onPressed: _submit, child: const Text('Sign in')),
+        _BusyButton(label: 'Sign in', busy: _busy, onPressed: _submit),
         const SizedBox(height: 20),
         Text(
           'Use the credentials provided by your facility administrator.',
@@ -199,12 +289,21 @@ class _StaffLoginPageState extends State<StaffLoginPage> {
           style: text.bodyMedium,
         ),
         const SizedBox(height: 16),
-        const InfoBanner(
-          'Sample accounts, any password: emeka@thickservices.com (Staff), '
-          'sarah@thickservices.com (Supervisor).',
-          icon: Icons.info_outline,
-          tone: BannerTone.neutral,
-        ),
+        // Test accounts are only listed in sample and emulator builds.
+        if (_isSample(context))
+          const InfoBanner(
+            'Sample accounts, any password: emeka@thickservices.com (Staff), '
+            'sarah@thickservices.com (Supervisor).',
+            icon: Icons.info_outline,
+            tone: BannerTone.neutral,
+          )
+        else if (FirebaseEnv.useEmulators)
+          const InfoBanner(
+            'Test accounts, password test1234: emeka@thickservices.com '
+            '(Staff), sarah@thickservices.com (Supervisor).',
+            icon: Icons.info_outline,
+            tone: BannerTone.neutral,
+          ),
         TextButton(
           onPressed: () => context.go(AppRoutes.clientLogin),
           child: const Text('Client? Report an issue'),
@@ -244,9 +343,14 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
     super.dispose();
   }
 
-  void _send() {
+  Future<void> _send() async {
     if (!_form.currentState!.validate()) return;
     final messenger = ScaffoldMessenger.of(context);
+    final sent = await _attempt(
+      context,
+      () => context.read<AuthRepository>().sendPasswordReset(_email.text),
+    );
+    if (!sent || !mounted) return;
     Navigator.of(context).pop();
     // Same message whether or not the account exists, so the form can't be
     // used to find out who has an account.
@@ -314,43 +418,51 @@ class EmailVerificationPage extends StatefulWidget {
 
 class _EmailVerificationPageState extends State<EmailVerificationPage> {
   static const _length = 6;
-  final _controllers = List.generate(_length, (_) => TextEditingController());
-  final _focus = List.generate(_length, (_) => FocusNode());
+  final _code = TextEditingController();
   var _showError = false;
+  var _busy = false;
 
   @override
   void dispose() {
-    for (final controller in _controllers) {
-      controller.dispose();
-    }
-    for (final node in _focus) {
-      node.dispose();
-    }
+    _code.dispose();
     super.dispose();
   }
 
-  void _onDigit(int index, String value) {
-    if (value.isNotEmpty && index < _length - 1) {
-      _focus[index + 1].requestFocus();
-    } else if (value.isEmpty && index > 0) {
-      _focus[index - 1].requestFocus();
-    }
-    if (_showError) setState(() => _showError = false);
-    // Typing the last digit of a complete code verifies it straight away.
-    if (value.isNotEmpty &&
-        index == _length - 1 &&
-        _controllers.every((c) => c.text.length == 1)) {
-      _verify();
-    }
-  }
-
-  void _verify() {
-    final complete = _controllers.every((c) => c.text.length == 1);
-    if (!complete) {
+  Future<void> _verify() async {
+    if (_busy) return;
+    if (_code.text.length != _length) {
       setState(() => _showError = true);
       return;
     }
-    context.go(AppRoutes.clientHome);
+    // Close the keyboard first, so the next screen lays out at full height.
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() => _busy = true);
+    final verified = await _attempt(
+      context,
+      () => context.read<AuthRepository>().verifyEmailCode(
+        widget.email,
+        _code.text,
+      ),
+    );
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (!verified) {
+      _code.clear(); // Ready for another try.
+      return;
+    }
+    if (_isSample(context)) context.go(AppRoutes.clientHome);
+  }
+
+  Future<void> _resend() async {
+    final sent = await _attempt(
+      context,
+      () => context.read<AuthRepository>().sendEmailCode(widget.email),
+    );
+    if (sent && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('A new code has been sent.')),
+      );
+    }
   }
 
   @override
@@ -382,33 +494,15 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
               style: text.bodyMedium,
             ),
             const SizedBox(height: 24),
-            Row(
-              children: [
-                for (var i = 0; i < _length; i++) ...[
-                  if (i > 0) const SizedBox(width: 8),
-                  Expanded(
-                    child: Semantics(
-                      label: 'Code digit ${i + 1}',
-                      child: TextField(
-                        controller: _controllers[i],
-                        focusNode: _focus[i],
-                        autofocus: i == 0,
-                        keyboardType: TextInputType.number,
-                        textAlign: TextAlign.center,
-                        maxLength: 1,
-                        style: text.titleLarge,
-                        decoration: InputDecoration(
-                          counterText: '',
-                          contentPadding: const EdgeInsets.symmetric(
-                            vertical: 14,
-                          ),
-                        ),
-                        onChanged: (value) => _onDigit(i, value),
-                      ),
-                    ),
-                  ),
-                ],
-              ],
+            // The sixth digit verifies the code straight away.
+            CodeInput(
+              controller: _code,
+              length: _length,
+              hasError: _showError,
+              onChanged: (_) {
+                if (_showError) setState(() => _showError = false);
+              },
+              onCompleted: (_) => _verify(),
             ),
             if (_showError) ...[
               const SizedBox(height: 8),
@@ -418,9 +512,10 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
               ),
             ],
             const SizedBox(height: 24),
-            FilledButton(
+            _BusyButton(
+              label: 'Verify & continue',
+              busy: _busy,
               onPressed: _verify,
-              child: const Text('Verify & continue'),
             ),
             const SizedBox(height: 16),
             Wrap(
@@ -429,9 +524,7 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
               children: [
                 Text('Didn’t receive a code?', style: text.bodyMedium),
                 TextButton(
-                  onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('A new code has been sent.')),
-                  ),
+                  onPressed: _resend,
                   child: const Text('Resend code'),
                 ),
               ],

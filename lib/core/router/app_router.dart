@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/attendance/presentation/attendance_page.dart';
+import '../../features/auth/presentation/session_cubit.dart';
 import '../../features/auth/presentation/login_pages.dart';
 import '../../features/messaging/presentation/messaging_pages.dart';
 import '../../features/notifications/presentation/notifications_page.dart';
@@ -29,9 +32,52 @@ StatefulShellRoute _shell(AppRole role, List<StatefulShellBranch> branches) =>
 GoRoute _route(String path, Widget Function(GoRouterState state) page) =>
     GoRoute(path: path, builder: (_, state) => page(state));
 
-GoRouter createAppRouter({String initialLocation = AppRoutes.clientLogin}) {
+/// Re-runs the router's redirect whenever the session changes.
+class _SessionListenable extends ChangeNotifier {
+  _SessionListenable(Stream<SessionState> stream) {
+    _subscription = stream.listen((_) => notifyListeners());
+  }
+
+  late final StreamSubscription<SessionState> _subscription;
+
+  @override
+  void dispose() {
+    _subscription.cancel();
+    super.dispose();
+  }
+}
+
+/// Where the session allows [location] to go, or null to stay.
+@visibleForTesting
+String? sessionRedirect(SessionState session, String location) {
+  final isLogin = location.startsWith('/login');
+  final isPreview = location.startsWith('/preview');
+  switch (session.status) {
+    case SessionStatus.sample:
+    case SessionStatus.unknown:
+      return null;
+    case SessionStatus.signedOut:
+      return isLogin || isPreview ? null : AppRoutes.clientLogin;
+    case SessionStatus.signedIn:
+      final role = session.user!.role;
+      final ownScreen = location.startsWith('/${role.path}/');
+      if (isLogin || (!ownScreen && !isPreview)) return AppRoutes.home(role);
+      return null;
+  }
+}
+
+GoRouter createAppRouter({
+  String initialLocation = AppRoutes.clientLogin,
+  SessionCubit? session,
+}) {
   return GoRouter(
     initialLocation: initialLocation,
+    refreshListenable: session == null
+        ? null
+        : _SessionListenable(session.stream),
+    redirect: session == null
+        ? null
+        : (_, state) => sessionRedirect(session.state, state.matchedLocation),
     routes: [
       _route(AppRoutes.clientLogin, (_) => const ClientLoginPage()),
       _route(

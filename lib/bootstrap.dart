@@ -22,5 +22,5 @@ Future<void> bootstrap({
   // The app is designed for phones held upright.
   await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   await firebase();
-  configureDependencies();
+  configureDependencies(useFirebase: !FirebaseEnv.useSampleData);
 }

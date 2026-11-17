@@ -11,6 +11,8 @@ import '../../../core/widgets/key_value_row.dart';
 import '../../../core/widgets/labelled_field.dart';
 import '../../../core/widgets/page_frames.dart';
 import '../../attendance/presentation/attendance_page.dart';
+import '../../auth/domain/auth_repository.dart';
+import '../../auth/presentation/session_cubit.dart';
 import '../domain/user_profile.dart';
 import 'profile_cubit.dart';
 
@@ -33,6 +35,10 @@ class _ProfilePageState extends State<ProfilePage> {
   late final _name = TextEditingController(text: _initial.name);
   late final _phone = TextEditingController(text: _initial.phone);
   late String _facility = _initial.facility;
+  late final Future<List<Facility>> _facilities = context
+      .read<ProfileCubit>()
+      .facilityOptions();
+  var _saving = false;
 
   @override
   void dispose() {
@@ -41,17 +47,29 @@ class _ProfilePageState extends State<ProfilePage> {
     super.dispose();
   }
 
-  void _save() {
-    if (!_form.currentState!.validate()) return;
-    context.read<ProfileCubit>().save(
-      widget.role,
-      name: _name.text,
-      phone: _phone.text,
-      facility: _facility,
-    );
+  Future<void> _save() async {
+    if (_saving || !_form.currentState!.validate()) return;
     FocusManager.instance.primaryFocus?.unfocus();
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('Profile updated')));
+    final messenger = ScaffoldMessenger.of(context);
+    final facilities = await _facilities;
+    if (!mounted) return;
+    setState(() => _saving = true);
+    try {
+      await context.read<ProfileCubit>().save(
+        widget.role,
+        name: _name.text,
+        phone: _phone.text,
+        facility: _facility,
+        facilityOption: facilities
+            .where((f) => f.name == _facility)
+            .firstOrNull,
+      );
+      messenger.showSnackBar(const SnackBar(content: Text('Profile updated')));
+    } on AuthFailure catch (failure) {
+      messenger.showSnackBar(SnackBar(content: Text(failure.message)));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   /// Signing out mid-shift would leave the shift open, so ask first.
@@ -85,7 +103,10 @@ class _ProfilePageState extends State<ProfilePage> {
       if (choice == null || !mounted) return;
       if (choice == _SignOutChoice.clockOut) attendance.clockOut(widget.role);
     }
-    if (mounted) context.go(AppRoutes.login(widget.role));
+    if (!mounted) return;
+    final router = GoRouter.of(context);
+    await context.read<SessionCubit>().signOut();
+    router.go(AppRoutes.login(widget.role));
   }
 
   @override
@@ -144,13 +165,26 @@ class _ProfilePageState extends State<ProfilePage> {
                 ),
               ),
               if (canChooseFacility(widget.role))
-                LabelledDropdown(
-                  label: 'Facility',
-                  options: sampleFacilities,
-                  initialValue: _facility,
-                  onChanged: (value) => _facility = value,
+                FutureBuilder(
+                  future: _facilities,
+                  builder: (context, snapshot) {
+                    final names = [
+                      for (final f in snapshot.data ?? const <Facility>[])
+                        f.name,
+                    ];
+                    if (names.isEmpty) return const SizedBox.shrink();
+                    return LabelledDropdown(
+                      label: 'Facility',
+                      options: names,
+                      initialValue: _facility,
+                      onChanged: (value) => _facility = value,
+                    );
+                  },
                 ),
-              FilledButton(onPressed: _save, child: const Text('Save changes')),
+              FilledButton(
+                onPressed: _saving ? null : _save,
+                child: const Text('Save changes'),
+              ),
             ],
           ),
         ),

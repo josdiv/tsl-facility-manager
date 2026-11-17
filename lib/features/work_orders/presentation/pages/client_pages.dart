@@ -34,13 +34,14 @@ class ClientHomePage extends StatelessWidget {
     );
     final text = Theme.of(context).textTheme;
     final active = orders.where((o) => o.status.isActive).length;
+    final me = context.profileOf(AppRole.client);
     return TabPage(
       title: 'Home',
       role: AppRole.client,
       children: [
-        const Eyebrow('Marina Towers, Lagos'),
+        Eyebrow(me.facility),
         const SizedBox(height: 8),
-        Text('Hello, Daniel 👋', style: text.headlineMedium),
+        Text('Hello, ${me.firstName} 👋', style: text.headlineMedium),
         const SizedBox(height: 6),
         Text(
           'A better facility starts with a quick report.',

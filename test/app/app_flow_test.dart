@@ -154,10 +154,8 @@ void main() {
     await tapText(tester, 'Verify & continue');
     expect(find.text('Enter all 6 digits to continue.'), findsOneWidget);
 
-    // The sixth digit verifies the code without tapping the button.
-    for (var i = 0; i < 6; i++) {
-      await tester.enterText(find.byType(TextField).at(i), '$i');
-    }
+    // A pasted code (letters dropped) verifies without tapping the button.
+    await tester.enterText(find.byType(TextField), '01-23 45');
     await tester.pumpAndSettle();
     expect(find.text('Hello, Daniel 👋'), findsOneWidget);
 

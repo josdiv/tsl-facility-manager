@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/router/app_routes.dart';
+import '../../profile/presentation/profile_cubit.dart';
 import '../../../core/session/app_role.dart';
 import '../../../core/utils/date_labels.dart';
 import '../../../core/widgets/app_badge.dart';
@@ -189,9 +190,9 @@ class _PartsRequestPageState extends State<PartsRequestPage> {
                     ? null
                     : value.split(' · ').first,
               ),
-              const LabelledDropdown(
+              LabelledDropdown(
                 label: 'Location',
-                options: ['Marina Towers, Lagos'],
+                options: [context.profileOf(AppRole.staff).facility],
               ),
               LabelledDropdown(
                 label: 'Inventory item',

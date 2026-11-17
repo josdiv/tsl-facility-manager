@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/router/app_routes.dart';
+import '../../../profile/presentation/profile_cubit.dart';
 import '../../../../core/session/app_role.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/date_labels.dart';
@@ -35,6 +36,7 @@ class StaffHomePage extends StatelessWidget {
     final clockedIn = context.select<AttendanceCubit, bool>(
       (cubit) => cubit.state.contains(AppRole.staff),
     );
+    final me = context.profileOf(AppRole.staff);
     final text = Theme.of(context).textTheme;
     final now = DateTime.now();
     final todo = orders
@@ -48,10 +50,13 @@ class StaffHomePage extends StatelessWidget {
       children: [
         Eyebrow(longDateLabel(now)),
         const SizedBox(height: 8),
-        Text('${greetingFor(now)}, Emeka 👋', style: text.headlineMedium),
+        Text(
+          '${greetingFor(now)}, ${me.firstName} 👋',
+          style: text.headlineMedium,
+        ),
         const SizedBox(height: 6),
         Text(
-          'Let’s keep Marina Towers running smoothly.',
+          'Let’s keep ${me.facility.split(',').first} running smoothly.',
           style: text.bodyMedium,
         ),
         const SizedBox(height: 16),
@@ -64,7 +69,7 @@ class StaffHomePage extends StatelessWidget {
                 style: text.titleMedium,
               ),
               const SizedBox(height: 4),
-              Text('Marina Towers, Lagos', style: text.bodyMedium),
+              Text(me.facility, style: text.bodyMedium),
               const SizedBox(height: 12),
               if (clockedIn)
                 OutlinedButton(

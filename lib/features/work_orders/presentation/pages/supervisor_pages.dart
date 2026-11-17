@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/router/app_routes.dart';
+import '../../../profile/presentation/profile_cubit.dart';
 import '../../../../core/session/app_role.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/date_labels.dart';
@@ -47,14 +48,15 @@ class SupervisorHomePage extends StatelessWidget {
     final clockedIn = context.select<AttendanceCubit, bool>(
       (cubit) => cubit.state.contains(AppRole.supervisor),
     );
+    final me = context.profileOf(AppRole.supervisor);
     final text = Theme.of(context).textTheme;
     return TabPage(
       title: 'Home',
       role: AppRole.supervisor,
       children: [
-        const Eyebrow('Marina Towers · Supervisor'),
+        Eyebrow('${me.facility.split(',').first} · Supervisor'),
         const SizedBox(height: 8),
-        Text('Hello, Sarah 👋', style: text.headlineMedium),
+        Text('Hello, ${me.firstName} 👋', style: text.headlineMedium),
         const SizedBox(height: 6),
         Text(
           'Your team is making good progress today.',
@@ -609,8 +611,10 @@ class _ReassignTaskPageState extends State<ReassignTaskPage> {
             const SizedBox(height: 6),
             Text('${order.id} · ${order.title}', style: text.bodyMedium),
             const SizedBox(height: 12),
-            const InfoBanner(
-              'Only workers assigned to Marina Towers are shown.',
+            InfoBanner(
+              'Only workers assigned to '
+              '${context.profileOf(AppRole.supervisor).facility.split(',').first} '
+              'are shown.',
               tone: BannerTone.neutral,
             ),
             RadioGroup<String>(

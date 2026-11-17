@@ -5,8 +5,11 @@ import 'package:go_router/go_router.dart';
 import '../core/constants/app_constants.dart';
 import '../core/di/injection.dart';
 import '../core/router/app_router.dart';
+import '../core/router/app_routes.dart';
 import '../core/theme/app_theme.dart';
 import '../features/attendance/presentation/attendance_page.dart';
+import '../features/auth/domain/auth_repository.dart';
+import '../features/auth/presentation/session_cubit.dart';
 import '../features/messaging/presentation/messaging_pages.dart';
 import '../features/parts/presentation/requisitions_cubit.dart';
 import '../features/profile/presentation/profile_cubit.dart';
@@ -22,9 +25,10 @@ class TslFacilityManagerApp extends StatefulWidget {
 }
 
 class _TslFacilityManagerAppState extends State<TslFacilityManagerApp> {
-  late final GoRouter _router = widget.initialLocation == null
-      ? createAppRouter()
-      : createAppRouter(initialLocation: widget.initialLocation!);
+  late final GoRouter _router = createAppRouter(
+    initialLocation: widget.initialLocation ?? AppRoutes.clientLogin,
+    session: sl<SessionCubit>(),
+  );
 
   @override
   void dispose() {
@@ -34,8 +38,16 @@ class _TslFacilityManagerAppState extends State<TslFacilityManagerApp> {
 
   @override
   Widget build(BuildContext context) {
+    return RepositoryProvider<AuthRepository>.value(
+      value: sl<AuthRepository>(),
+      child: _providers(),
+    );
+  }
+
+  Widget _providers() {
     return MultiBlocProvider(
       providers: [
+        BlocProvider.value(value: sl<SessionCubit>()),
         BlocProvider(
           create: (_) => sl<WorkOrdersBloc>()..add(const WorkOrdersRequested()),
         ),

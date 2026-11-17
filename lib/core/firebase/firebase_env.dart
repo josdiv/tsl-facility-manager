@@ -16,6 +16,13 @@ abstract final class FirebaseEnv {
   /// `adb reverse tcp:<port> tcp:<port>` for each emulator port first.
   static const useEmulators = bool.fromEnvironment('USE_EMULATORS');
 
+  /// Run on in-memory sample data with no sign-in, for demos without a
+  /// backend.
+  static const useSampleData = bool.fromEnvironment('SAMPLE_DATA');
+
+  /// Where the emulators are, used exactly as given. The default suits a
+  /// physical phone with `adb reverse` tunnels; an Android emulator needs
+  /// `--dart-define=EMULATOR_HOST=10.0.2.2`.
   static const emulatorHost = String.fromEnvironment(
     'EMULATOR_HOST',
     defaultValue: '127.0.0.1',
@@ -50,11 +57,26 @@ FirebaseFunctions appFunctions() =>
 Future<void> connectEmulatorsIfEnabled() async {
   if (!FirebaseEnv.useEmulators) return;
   const host = FirebaseEnv.emulatorHost;
-  await FirebaseAuth.instance.useAuthEmulator(host, FirebaseEnv.authPort);
-  appFirestore().useFirestoreEmulator(host, FirebaseEnv.firestorePort);
+  // FlutterFire would rewrite 127.0.0.1 to 10.0.2.2 on Android, which only
+  // works on an Android emulator. Use the host exactly as configured.
+  await FirebaseAuth.instance.useAuthEmulator(
+    host,
+    FirebaseEnv.authPort,
+    automaticHostMapping: false,
+  );
+  appFirestore().useFirestoreEmulator(
+    host,
+    FirebaseEnv.firestorePort,
+    automaticHostMapping: false,
+  );
   await FirebaseStorage.instance.useStorageEmulator(
     host,
     FirebaseEnv.storagePort,
+    automaticHostMapping: false,
   );
-  appFunctions().useFunctionsEmulator(host, FirebaseEnv.functionsPort);
+  appFunctions().useFunctionsEmulator(
+    host,
+    FirebaseEnv.functionsPort,
+    automaticHostMapping: false,
+  );
 }

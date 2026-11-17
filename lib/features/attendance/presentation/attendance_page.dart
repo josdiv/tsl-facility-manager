@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/router/app_routes.dart';
 
+import '../../profile/presentation/profile_cubit.dart';
 import '../../../core/session/app_role.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_card.dart';
@@ -99,7 +100,7 @@ class _AttendanceBody extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Marina Towers, Lagos', style: text.titleMedium),
+              Text(context.profileOf(role).facility, style: text.titleMedium),
               const SizedBox(height: 4),
               Text('12 Marina Road, Lagos Island', style: text.bodyMedium),
               const SizedBox(height: 4),
