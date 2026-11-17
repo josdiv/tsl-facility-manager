@@ -223,11 +223,12 @@ limit.
 | `slaId` | string \| null | SLA tasks |
 | `assignedToId` `assignedToName` | string \| null | The technician |
 | `supervisorId` `supervisorName` | string \| null | |
+| `assignmentNote` | string \| null | Up to 1,000 characters. The supervisor's note to the technician when reassigning, for example `Overdue, please do this first` |
 | `dueAt` | timestamp | |
 | `reportPhotos` | array&lt;string&gt; | Storage paths. Up to 4. From the person who reported it |
 | `startedAt` | timestamp \| null | |
 | `workNote` | string \| null | The technician's update when submitting |
-| `workPhotos` | array&lt;string&gt; | Up to 6. Proof of completed work |
+| `workPhotos` | array&lt;string&gt; | 1 to 6 when submitting. Proof of completed work |
 | `submittedAt` | timestamp \| null | |
 | `returnReason` | enum \| null | `incomplete_finishing`, `not_satisfactory`, `safety_concern`, `wrong_resolution` |
 | `returnFeedback` | string \| null | |
@@ -235,6 +236,7 @@ limit.
 | `returnedAt` | timestamp \| null | |
 | `inspectionChecks` | array&lt;string&gt; | Checklist items the supervisor ticked |
 | `inspectionNote` | string \| null | |
+| `inspectionPhotos` | array&lt;string&gt; | Up to 4. Photos the supervisor adds when confirming |
 | `completedAt` | timestamp \| null | |
 | `lastMessageAt` | timestamp \| null | **Server** |
 | `lastMessagePreview` | string \| null | **Server.** First 120 characters |
@@ -259,10 +261,10 @@ real status.
 | Change | Who | Fields they may change |
 | --- | --- | --- |
 | Start | The assigned staff member | `status` (`open` → `in_progress`), `startedAt` |
-| Submit | The assigned staff member | `status` (`in_progress` or `returned` → `pending_review`), `workNote`, `workPhotos`, `submittedAt` |
-| Confirm | A supervisor at the location | `status` (`pending_review` → `completed`), `inspectionChecks`, `inspectionNote`, `completedAt` |
+| Submit | The assigned staff member | `status` (`in_progress` or `returned` → `pending_review`), `workNote`, `workPhotos` (at least one), `submittedAt` |
+| Confirm | A supervisor at the location | `status` (`pending_review` → `completed`), `inspectionChecks`, `inspectionNote`, `inspectionPhotos`, `completedAt` |
 | Return | A supervisor at the location | `status` (`pending_review` → `returned`), `returnReason`, `returnFeedback`, `returnPhotos`, `returnedAt`, and optionally `assignedToId` and `assignedToName` |
-| Reassign | A supervisor at the location | `assignedToId`, `assignedToName`, `supervisorId`, `supervisorName`. Not allowed once `completed` or `cancelled` |
+| Reassign | A supervisor at the location | `assignedToId`, `assignedToName`, `supervisorId`, `supervisorName`, `assignmentNote`. Not allowed once `completed` or `cancelled` |
 | Anything | Admin | Any field except `ref`, `createdAt` and `createdBy` |
 
 Every change also sets `updatedAt` (the server time) and `updatedBy`. Times such
@@ -412,7 +414,8 @@ belong to an `active` company.
 | --- | --- | --- |
 | `workOrders/{id}/report/{file}` | The client, before calling `reportIssue` (the app picks the new work order ID) | Anyone who can read the work order |
 | `workOrders/{id}/work/{file}` | The assigned staff member | Same |
-| `workOrders/{id}/return/{file}` | A supervisor at the location | Same |
+| `workOrders/{id}/return/{file}` | A supervisor at the location, while the work is pending review | Same |
+| `workOrders/{id}/inspection/{file}` | A supervisor at the location, while the work is pending review | Same |
 | `documents/{documentId}/{file}` | Admin | Staff and supervisors at the location, and admins |
 | `inventory/{itemId}/{file}` | Admin | Staff and supervisors, and admins |
 
@@ -459,7 +462,8 @@ the sample data in Firestore.
 - Text dates and times (`dueDate` + `dueTime`, `clockInDate` + `clockInTime`)
   are now single timestamps: `dueAt`, `clockInAt`.
 - Work order status gains `returned` and `cancelled`. The review fields (work
-  note and photos, return reason and feedback, inspection) are added.
+  note and photos, return reason and feedback, inspection checks, note and
+  photos) and the supervisor's `assignmentNote` are added.
 - `attachDocumentOne` to `attachDocumentFour` are replaced by `reportPhotos`,
   `workPhotos` and `returnPhotos`.
 - `workorder_status` becomes the `events` sub-collection, and

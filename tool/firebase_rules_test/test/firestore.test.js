@@ -98,11 +98,12 @@ describe('work order lifecycle', () => {
     }));
   });
 
-  it('refuses a submission with bad photos, no note, or from the wrong status', async () => {
+  it('refuses a submission with bad or missing photos, no note, or from the wrong status', async () => {
     const submit = (id, extra) => updateDoc(doc(as(env, 'emeka'), `workOrders/${id}`), {
-      status: 'pending_review', workNote: 'Done', workPhotos: [], submittedAt: serverTimestamp(),
-      ...stamp('emeka'), ...extra,
+      status: 'pending_review', workNote: 'Done', workPhotos: [`workOrders/${id}/work/after.jpg`],
+      submittedAt: serverTimestamp(), ...stamp('emeka'), ...extra,
     });
+    await assertFails(submit('working', { workPhotos: [] }));
     await assertFails(submit('working', { workPhotos: ['workOrders/open/work/stolen.jpg'] }));
     await assertFails(submit('working', { workPhotos: Array.from({ length: 7 }, (_, i) => `workOrders/working/work/${i}.jpg`) }));
     await assertFails(submit('working', { workNote: '' }));
@@ -121,11 +122,19 @@ describe('work order lifecycle', () => {
       status: 'completed',
       inspectionChecks: ['Unit operating correctly', 'Area clean and safe'],
       inspectionNote: 'All good.',
+      inspectionPhotos: ['workOrders/review/inspection/closed-panel.jpg'],
       completedAt: serverTimestamp(),
       ...stamp('sarah'),
     }));
     await assertFails(updateDoc(doc(as(env, 'musa'), 'workOrders/review'), {
       status: 'completed', inspectionChecks: [], completedAt: serverTimestamp(), ...stamp('musa'),
+    }));
+  });
+
+  it('only accepts inspection photos from the inspection folder', async () => {
+    await assertFails(updateDoc(doc(as(env, 'sarah'), 'workOrders/review'), {
+      status: 'completed', inspectionChecks: [], completedAt: serverTimestamp(),
+      inspectionPhotos: ['workOrders/review/work/borrowed.jpg'], ...stamp('sarah'),
     }));
   });
 
@@ -149,16 +158,18 @@ describe('work order lifecycle', () => {
   it('lets the assignee resubmit returned work', async () => {
     await env.withSecurityRulesDisabled((c) => updateDoc(doc(c.firestore(), 'workOrders/working'), { status: 'returned' }));
     await assertSucceeds(updateDoc(doc(as(env, 'emeka'), 'workOrders/working'), {
-      status: 'pending_review', workNote: 'Fixed the cover.', workPhotos: [], submittedAt: serverTimestamp(), ...stamp('emeka'),
+      status: 'pending_review', workNote: 'Fixed the cover.', workPhotos: ['workOrders/working/work/cover-on.jpg'], submittedAt: serverTimestamp(), ...stamp('emeka'),
     }));
   });
 
   it('allows reassigning active work but not completed work', async () => {
-    const reassign = (id) => updateDoc(doc(as(env, 'sarah'), `workOrders/${id}`), {
-      assignedToId: 'tunde', assignedToName: 'Tunde Bakare', ...stamp('sarah'),
+    const reassign = (id, extra = {}) => updateDoc(doc(as(env, 'sarah'), `workOrders/${id}`), {
+      assignedToId: 'tunde', assignedToName: 'Tunde Bakare', ...stamp('sarah'), ...extra,
     });
     await assertSucceeds(reassign('open'));
     await assertFails(reassign('done'));
+    await assertSucceeds(reassign('working', { assignmentNote: 'Overdue, please do this first.' }));
+    await assertFails(reassign('working', { assignmentNote: 'x'.repeat(1001) }));
   });
 
   it('does not let clients change their requests', async () => {

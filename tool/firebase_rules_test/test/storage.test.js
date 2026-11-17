@@ -34,6 +34,12 @@ describe('work order photos', () => {
     await assertFails(upload('musa', 'workOrders/review/return/issue.jpg'));
   });
 
+  it('lets the supervisor upload inspection photos during review', async () => {
+    await assertSucceeds(upload('sarah', 'workOrders/review/inspection/closed.jpg'));
+    await assertFails(upload('emeka', 'workOrders/review/inspection/closed.jpg'));
+    await assertFails(upload('sarah', 'workOrders/working/inspection/closed.jpg'));
+  });
+
   it('accepts images only', async () => {
     await assertFails(upload('emeka', 'workOrders/working/work/report.pdf', 'application/pdf'));
   });

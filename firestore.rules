@@ -352,15 +352,18 @@ service cloud.firestore {
           && only(['status', 'workNote', 'workPhotos', 'submittedAt'])
           && text(incoming().workNote, 1, 4000)
           && photoList(incoming().workPhotos, workOrderId, 'work', 6)
+          && incoming().workPhotos.size() >= 1
           && incoming().submittedAt == request.time;
       }
 
       function confirm() {
         return isLocationSupervisor()
           && moves(['pending_review'], 'completed')
-          && only(['status', 'inspectionChecks', 'inspectionNote', 'completedAt'])
+          && only(['status', 'inspectionChecks', 'inspectionNote', 'inspectionPhotos', 'completedAt'])
           && incoming().inspectionChecks is list && incoming().inspectionChecks.size() <= 10
           && optionalText(optionalField(incoming(), 'inspectionNote'), 4000)
+          && (optionalField(incoming(), 'inspectionPhotos') == null
+              || photoList(incoming().inspectionPhotos, workOrderId, 'inspection', 4))
           && incoming().completedAt == request.time;
       }
 
@@ -380,7 +383,8 @@ service cloud.firestore {
       function reassign() {
         return isLocationSupervisor()
           && !(current().status in ['completed', 'cancelled'])
-          && only(['assignedToId', 'assignedToName', 'supervisorId', 'supervisorName'])
+          && only(['assignedToId', 'assignedToName', 'supervisorId', 'supervisorName', 'assignmentNote'])
+          && optionalText(optionalField(incoming(), 'assignmentNote'), 1000)
           && (!changedKeys().hasAny(['assignedToId', 'assignedToName']) || validAssignee())
           && (!changedKeys().hasAny(['supervisorId', 'supervisorName']) || validSupervisor());
       }
