@@ -11,17 +11,13 @@ import '../../../core/widgets/info_banner.dart';
 import '../../../core/widgets/key_value_row.dart';
 import '../../../core/widgets/page_frames.dart';
 import '../../profile/presentation/profile_cubit.dart';
+import '../domain/attendance.dart';
+import 'attendance_cubit.dart';
 
-/// Which roles are on the clock. Sample data until GPS is connected.
-class AttendanceCubit extends Cubit<Set<AppRole>> {
-  AttendanceCubit() : super(const {});
+export 'attendance_cubit.dart';
 
-  void clockIn(AppRole role) => emit({...state, role});
-
-  void clockOut(AppRole role) => emit({...state}..remove(role));
-}
-
-/// What the device reports about the user's position.
+/// Fixed readings for reviewing the refused clock-in designs at
+/// /preview/gps/{state}. The real screen reads the phone's GPS.
 enum GpsReading {
   inside('24 metres · Inside zone', '± 8 metres'),
   outside('245 metres · Outside zone', '± 8 metres'),
@@ -48,36 +44,125 @@ class AttendancePage extends StatelessWidget {
   });
 
   final AppRole role;
+
+  /// Only used by previews.
   final GpsReading reading;
 
-  /// Shows the page as a pushed screen, for the refused clock-in designs.
+  /// Shows a fixed [reading] as a pushed screen, for the refused designs.
   final bool isPreview;
 
   @override
   Widget build(BuildContext context) {
-    final children = <Widget>[_AttendanceBody(role: role, reading: reading)];
-    return isPreview
-        ? DetailPage(title: 'GPS attendance', children: children)
-        : TabPage(title: 'GPS attendance', role: role, children: children);
+    if (isPreview) {
+      return DetailPage(
+        title: 'GPS attendance',
+        children: [_PreviewBody(reading: reading)],
+      );
+    }
+    return TabPage(
+      title: 'GPS attendance',
+      role: role,
+      children: [_LiveAttendance(role: role)],
+    );
   }
 }
 
-class _AttendanceBody extends StatelessWidget {
-  const _AttendanceBody({required this.role, required this.reading});
+class _LiveAttendance extends StatefulWidget {
+  const _LiveAttendance({required this.role});
 
   final AppRole role;
-  final GpsReading reading;
+
+  @override
+  State<_LiveAttendance> createState() => _LiveAttendanceState();
+}
+
+class _LiveAttendanceState extends State<_LiveAttendance> {
+  Site? _site;
+  LocationFix? _fix;
+  LocationProblem? _problem;
+  var _checking = true;
+  var _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final user = context.read<ProfileCubit>().of(widget.role);
+    final site = await context.read<AttendanceRepository>().siteFor(user);
+    if (!mounted) return;
+    setState(() => _site = site);
+    await _check();
+  }
+
+  /// Reads the phone's position.
+  Future<void> _check() async {
+    final location = context.read<LocationService>();
+    setState(() {
+      _checking = true;
+      _problem = null;
+    });
+    try {
+      await location.ensurePermission();
+      final fix = await location.currentFix();
+      if (mounted) setState(() => _fix = fix);
+    } on LocationUnavailable catch (e) {
+      if (mounted) setState(() => _problem = e.problem);
+    } on Object {
+      // No reading in time: treat it as a weak signal.
+      if (mounted) setState(() => _fix = null);
+    } finally {
+      if (mounted) setState(() => _checking = false);
+    }
+  }
+
+  Future<void> _clock({required bool clockIn}) async {
+    final user = context.read<ProfileCubit>().of(widget.role);
+    final attendance = context.read<AttendanceCubit>();
+    final messenger = ScaffoldMessenger.of(context);
+    final router = GoRouter.of(context);
+    setState(() => _busy = true);
+    try {
+      if (clockIn) {
+        await attendance.clockIn(user, _fix!);
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Shift started · GPS verified')),
+        );
+        // Staff start their shift by picking up work.
+        if (widget.role == AppRole.staff) router.go(AppRoutes.staffTasks);
+      } else {
+        await attendance.clockOut(user, fix: _fix);
+        messenger.showSnackBar(const SnackBar(content: Text('Shift ended')));
+      }
+    } on AttendanceFailure catch (failure) {
+      messenger.showSnackBar(SnackBar(content: Text(failure.message)));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final canClockIn = reading == GpsReading.inside;
-    // A refused reading always shows the refused state, never an active shift.
-    final clockedIn =
-        context.select<AttendanceCubit, bool>(
-          (cubit) => cubit.state.contains(role),
-        ) &&
-        canClockIn;
+    final since = context.select<AttendanceCubit, DateTime?>(
+      (cubit) => cubit.state.since(widget.role),
+    );
+    final clockedIn = since != null;
+    final site = _site;
+    final fix = _fix;
+    final verdict = site == null || fix == null ? null : verdictFor(site, fix);
+    final distance = site == null || fix == null
+        ? null
+        : site.distanceTo(fix).round();
     final text = Theme.of(context).textTheme;
+    final distanceText = _checking
+        ? 'Checking…'
+        : distance == null
+        ? 'Unavailable'
+        : '${distanceLabel(distance)} · '
+              '${verdict == GpsVerdict.inside ? 'Inside zone' : 'Outside zone'}';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -93,13 +178,196 @@ class _AttendanceBody extends StatelessWidget {
           style: text.bodyMedium,
         ),
         const SizedBox(height: 16),
-        _GeofenceMap(inside: canClockIn),
+        _GeofenceMap(inside: verdict == GpsVerdict.inside),
         const SizedBox(height: 12),
         AppCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(context.profileOf(role).facility, style: text.titleMedium),
+              Text(site?.name ?? 'Your facility', style: text.titleMedium),
+              if (site != null) ...[
+                const SizedBox(height: 4),
+                Text(site.address, style: text.bodyMedium),
+              ],
+              const SizedBox(height: 4),
+              KeyValueRow(
+                'Allowed radius',
+                site == null ? '—' : '${site.radiusM.round()} metres',
+              ),
+              KeyValueRow(
+                'Your distance',
+                distanceText,
+                valueColor: verdict == GpsVerdict.inside
+                    ? AppColors.success
+                    : verdict == null
+                    ? null
+                    : AppColors.danger,
+              ),
+              KeyValueRow(
+                'GPS accuracy',
+                fix == null ? '—' : '± ${fix.accuracyM.round()} metres',
+                divider: clockedIn,
+              ),
+              if (clockedIn)
+                KeyValueRow(
+                  'Clocked in at',
+                  TimeOfDay.fromDateTime(since).format(context),
+                  divider: false,
+                ),
+            ],
+          ),
+        ),
+        ..._actions(clockedIn, verdict, distance),
+      ],
+    );
+  }
+
+  List<Widget> _actions(bool clockedIn, GpsVerdict? verdict, int? distance) {
+    final location = context.read<LocationService>();
+    Widget retry(String label) => OutlinedButton(
+      onPressed: _checking ? null : _check,
+      child: Text(label),
+    );
+
+    if (clockedIn) {
+      return [
+        const InfoBanner(
+          'Your shift is running. Clock out when you leave the facility.',
+          icon: Icons.timer_outlined,
+          tone: BannerTone.success,
+        ),
+        OutlinedButton(
+          onPressed: _busy ? null : () => _clock(clockIn: false),
+          child: const Text('Clock out'),
+        ),
+      ];
+    }
+    if (_checking) {
+      return const [
+        InfoBanner(
+          'Finding your location…',
+          icon: Icons.my_location,
+          tone: BannerTone.neutral,
+        ),
+      ];
+    }
+    switch (_problem) {
+      case LocationProblem.permissionDenied:
+        return [
+          const InfoBanner(
+            'Location permission is off. Attendance needs your location to '
+            'confirm you are on site.',
+            icon: Icons.location_disabled,
+            tone: BannerTone.warning,
+          ),
+          FilledButton(onPressed: _check, child: const Text('Allow location')),
+        ];
+      case LocationProblem.permanentlyDenied:
+        return [
+          const InfoBanner(
+            'Location permission is off. Turn it on for TSL Facility Manager '
+            'in your phone’s settings, then come back.',
+            icon: Icons.location_disabled,
+            tone: BannerTone.warning,
+          ),
+          FilledButton(
+            onPressed: () =>
+                location.openSettings(LocationProblem.permanentlyDenied),
+            child: const Text('Open settings'),
+          ),
+          const SizedBox(height: 8),
+          retry('Try again'),
+        ];
+      case LocationProblem.serviceOff:
+        return [
+          const InfoBanner(
+            'Your phone’s location is turned off. Turn it on to clock in.',
+            icon: Icons.location_off_outlined,
+            tone: BannerTone.warning,
+          ),
+          FilledButton(
+            onPressed: () => location.openSettings(LocationProblem.serviceOff),
+            child: const Text('Turn on location'),
+          ),
+          const SizedBox(height: 8),
+          retry('Try again'),
+        ];
+      case null:
+        break;
+    }
+    return switch (verdict) {
+      GpsVerdict.inside => [
+        const InfoBanner(
+          'Location verified. You are inside the facility boundary.',
+          icon: Icons.check_circle_outline,
+          tone: BannerTone.success,
+        ),
+        FilledButton(
+          onPressed: _busy ? null : () => _clock(clockIn: true),
+          child: const Text('Verify & clock in'),
+        ),
+      ],
+      GpsVerdict.outside => [
+        InfoBanner(
+          'Clock-in blocked: you are ${distanceLabel(distance!)} away. Move '
+          'within the '
+          '${_site!.radiusM.round()} metre facility boundary and try again.',
+          icon: Icons.location_off_outlined,
+          tone: BannerTone.danger,
+        ),
+        retry('Check again'),
+      ],
+      GpsVerdict.mocked => [
+        const InfoBanner(
+          'Your location appears to come from a location-faking app. Turn it '
+          'off to clock in.',
+          icon: Icons.gpp_bad_outlined,
+          tone: BannerTone.danger,
+        ),
+        retry('Check again'),
+      ],
+      GpsVerdict.weakSignal || null => [
+        const InfoBanner(
+          'GPS signal is too weak to confirm your location. Move near a window '
+          'or outdoors, then try again.',
+          icon: Icons.gps_not_fixed,
+          tone: BannerTone.warning,
+        ),
+        retry('Try again'),
+      ],
+    };
+  }
+}
+
+/// The fixed designs for refused clock-ins.
+class _PreviewBody extends StatelessWidget {
+  const _PreviewBody({required this.reading});
+
+  final GpsReading reading;
+
+  @override
+  Widget build(BuildContext context) {
+    final inside = reading == GpsReading.inside;
+    final text = Theme.of(context).textTheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Eyebrow('Location-based attendance'),
+        const SizedBox(height: 8),
+        Text('Start your shift', style: text.headlineMedium),
+        const SizedBox(height: 6),
+        Text(
+          'You must be inside your assigned facility’s geofence.',
+          style: text.bodyMedium,
+        ),
+        const SizedBox(height: 16),
+        _GeofenceMap(inside: inside),
+        const SizedBox(height: 12),
+        AppCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Marina Towers, Lagos', style: text.titleMedium),
               const SizedBox(height: 4),
               Text('12 Marina Road, Lagos Island', style: text.bodyMedium),
               const SizedBox(height: 4),
@@ -107,77 +375,50 @@ class _AttendanceBody extends StatelessWidget {
               KeyValueRow(
                 'Your distance',
                 reading.distance,
-                valueColor: canClockIn ? AppColors.success : AppColors.danger,
+                valueColor: inside ? AppColors.success : AppColors.danger,
               ),
-              KeyValueRow('GPS accuracy', reading.accuracy, divider: clockedIn),
-              if (clockedIn)
-                const KeyValueRow('Clocked in at', '08:02 AM', divider: false),
+              KeyValueRow('GPS accuracy', reading.accuracy, divider: false),
             ],
           ),
         ),
-        ..._stateMessage(context, clockedIn),
+        ...switch (reading) {
+          GpsReading.inside => const [
+            InfoBanner(
+              'Location verified. You are inside the facility boundary.',
+              icon: Icons.check_circle_outline,
+              tone: BannerTone.success,
+            ),
+          ],
+          GpsReading.outside => const [
+            InfoBanner(
+              'Clock-in blocked: you are 245m away. Move within the 100m '
+              'facility boundary and try again.',
+              icon: Icons.location_off_outlined,
+              tone: BannerTone.danger,
+            ),
+            FilledButton(onPressed: null, child: Text('Verify & clock in')),
+          ],
+          GpsReading.weakSignal => const [
+            InfoBanner(
+              'GPS signal is too weak to confirm your location. Move near a '
+              'window or outdoors, then try again.',
+              icon: Icons.gps_not_fixed,
+              tone: BannerTone.warning,
+            ),
+            OutlinedButton(onPressed: null, child: Text('Try again')),
+          ],
+          GpsReading.permissionOff => const [
+            InfoBanner(
+              'Location permission is off. Attendance needs your location to '
+              'confirm you are on site.',
+              icon: Icons.location_disabled,
+              tone: BannerTone.warning,
+            ),
+            FilledButton(onPressed: null, child: Text('Open settings')),
+          ],
+        },
       ],
     );
-  }
-
-  List<Widget> _stateMessage(BuildContext context, bool clockedIn) {
-    final cubit = context.read<AttendanceCubit>();
-    void clock(String message, VoidCallback action) {
-      action();
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(message)));
-    }
-
-    return switch (reading) {
-      GpsReading.inside => [
-        const InfoBanner(
-          'Location verified. You are inside the facility boundary.',
-          icon: Icons.check_circle_outline,
-          tone: BannerTone.success,
-        ),
-        if (clockedIn)
-          OutlinedButton(
-            onPressed: () => clock('Shift ended', () => cubit.clockOut(role)),
-            child: const Text('Clock out'),
-          )
-        else
-          FilledButton(
-            onPressed: () {
-              clock('Shift started · GPS verified', () => cubit.clockIn(role));
-              // Staff start their shift by picking up work.
-              if (role == AppRole.staff) context.go(AppRoutes.staffTasks);
-            },
-            child: const Text('Verify & clock in'),
-          ),
-      ],
-      GpsReading.outside => const [
-        InfoBanner(
-          'Clock-in blocked: you are 245m away. Move within the 100m facility '
-          'boundary and try again.',
-          icon: Icons.location_off_outlined,
-          tone: BannerTone.danger,
-        ),
-        FilledButton(onPressed: null, child: Text('Verify & clock in')),
-      ],
-      GpsReading.weakSignal => [
-        const InfoBanner(
-          'GPS signal is too weak to confirm your location. Move near a window '
-          'or outdoors, then try again.',
-          icon: Icons.gps_not_fixed,
-          tone: BannerTone.warning,
-        ),
-        OutlinedButton(onPressed: () {}, child: const Text('Try again')),
-      ],
-      GpsReading.permissionOff => [
-        const InfoBanner(
-          'Location permission is off. Attendance needs your location to '
-          'confirm you are on site.',
-          icon: Icons.location_disabled,
-          tone: BannerTone.warning,
-        ),
-        FilledButton(onPressed: () {}, child: const Text('Open settings')),
-      ],
-    };
   }
 }
 

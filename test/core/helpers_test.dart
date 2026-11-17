@@ -2,9 +2,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:tsl_facility_manager/core/session/app_role.dart';
 import 'package:tsl_facility_manager/core/utils/date_labels.dart';
 import 'package:tsl_facility_manager/core/widgets/labelled_field.dart';
+import 'package:tsl_facility_manager/features/attendance/data/sample_attendance.dart';
+import 'package:tsl_facility_manager/features/attendance/domain/attendance.dart';
 import 'package:tsl_facility_manager/features/attendance/presentation/attendance_page.dart';
 import 'package:tsl_facility_manager/features/auth/presentation/login_pages.dart';
 import 'package:tsl_facility_manager/features/parts/presentation/parts_request_page.dart';
+import 'package:tsl_facility_manager/features/profile/domain/user_profile.dart';
 
 void main() {
   group('dateTimeLabel', () {
@@ -55,13 +58,57 @@ void main() {
     expect(quantityError('abc', 24), isNotNull);
   });
 
-  test('AttendanceCubit tracks each role separately', () {
-    final cubit = AttendanceCubit()..clockIn(AppRole.staff);
-    expect(cubit.state, {AppRole.staff});
-    cubit.clockIn(AppRole.supervisor);
-    cubit.clockOut(AppRole.staff);
-    expect(cubit.state, {AppRole.supervisor});
-    cubit.close();
+  test('AttendanceCubit tracks each role separately in sample mode', () async {
+    const fix = LocationFix(latitude: 6.4517, longitude: 3.3887, accuracyM: 8);
+    final cubit = AttendanceCubit(InMemoryAttendanceRepository());
+    await cubit.clockIn(sampleProfiles[AppRole.staff]!, fix);
+    expect(cubit.state.contains(AppRole.staff), isTrue);
+    await cubit.clockIn(sampleProfiles[AppRole.supervisor]!, fix);
+    await cubit.clockOut(sampleProfiles[AppRole.staff]!);
+    expect(cubit.state.shifts.keys, [AppRole.supervisor]);
+    await cubit.close();
+  });
+
+  group('geofence verdict', () {
+    LocationFix at(double lat, double lng, {double accuracy = 8}) =>
+        LocationFix(latitude: lat, longitude: lng, accuracyM: accuracy);
+
+    test('measures distance in metres', () {
+      // 0.001 degrees of latitude is about 111 metres.
+      expect(sampleSite.distanceTo(at(6.4525, 3.3886)), closeTo(111, 1));
+    });
+
+    test('distances read in metres, then kilometres', () {
+      expect(distanceLabel(28), '28 metres');
+      expect(distanceLabel(3240), '3.2 km');
+      expect(distanceLabel(402096), '402 km');
+    });
+
+    test('inside, outside, weak signal and fake GPS', () {
+      expect(verdictFor(sampleSite, at(6.4517, 3.3887)), GpsVerdict.inside);
+      expect(verdictFor(sampleSite, at(6.4535, 3.3886)), GpsVerdict.outside);
+      expect(
+        verdictFor(sampleSite, at(6.4517, 3.3887, accuracy: 90)),
+        GpsVerdict.weakSignal,
+      );
+      // Hundreds of kilometres away is "outside" however vague the reading.
+      expect(
+        verdictFor(sampleSite, at(9.0765, 7.3986, accuracy: 105)),
+        GpsVerdict.outside,
+      );
+      expect(
+        verdictFor(
+          sampleSite,
+          const LocationFix(
+            latitude: 6.4517,
+            longitude: 3.3887,
+            accuracyM: 5,
+            isMocked: true,
+          ),
+        ),
+        GpsVerdict.mocked,
+      );
+    });
   });
 
   test('GpsReading falls back to inside for unknown names', () {

@@ -10,7 +10,8 @@ import '../../../core/widgets/initials_avatar.dart';
 import '../../../core/widgets/key_value_row.dart';
 import '../../../core/widgets/labelled_field.dart';
 import '../../../core/widgets/page_frames.dart';
-import '../../attendance/presentation/attendance_page.dart';
+import '../../attendance/domain/attendance.dart';
+import '../../attendance/presentation/attendance_cubit.dart';
 import '../../auth/domain/auth_repository.dart';
 import '../../auth/presentation/session_cubit.dart';
 import '../domain/user_profile.dart';
@@ -101,7 +102,18 @@ class _ProfilePageState extends State<ProfilePage> {
         ),
       );
       if (choice == null || !mounted) return;
-      if (choice == _SignOutChoice.clockOut) attendance.clockOut(widget.role);
+      if (choice == _SignOutChoice.clockOut) {
+        try {
+          await attendance.clockOut(
+            context.read<ProfileCubit>().of(widget.role),
+          );
+        } on AttendanceFailure catch (failure) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text(failure.message)));
+          return;
+        }
+      }
     }
     if (!mounted) return;
     final router = GoRouter.of(context);

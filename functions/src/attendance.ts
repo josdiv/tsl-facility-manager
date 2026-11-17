@@ -39,6 +39,15 @@ export const clockIn = onCall({ region: REGION }, async (request) => {
   const geo = location.geo as GeoPoint;
   const distanceM = Math.round(distanceMetres(geo, position));
 
+  // Android flags readings from fake-GPS apps. The flag is self-reported, so
+  // it stops casual cheating rather than a determined one.
+  if (request.data?.isMocked === true) {
+    throw new HttpsError('failed-precondition', 'mock-location');
+  }
+  // A vague reading is still decisive when its whole error margin is outside.
+  if (distanceM - position.accuracyM > location.radiusM) {
+    throw new HttpsError('failed-precondition', 'outside-geofence', { distanceM, radiusM: location.radiusM });
+  }
   if (position.accuracyM > MAX_ACCURACY_M) {
     throw new HttpsError('failed-precondition', 'weak-signal', { distanceM, accuracyM: position.accuracyM });
   }

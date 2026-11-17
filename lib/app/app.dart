@@ -7,7 +7,8 @@ import '../core/di/injection.dart';
 import '../core/router/app_router.dart';
 import '../core/router/app_routes.dart';
 import '../core/theme/app_theme.dart';
-import '../features/attendance/presentation/attendance_page.dart';
+import '../features/attendance/domain/attendance.dart';
+import '../features/attendance/presentation/attendance_cubit.dart';
 import '../features/auth/domain/auth_repository.dart';
 import '../features/auth/presentation/session_cubit.dart';
 import '../features/messaging/domain/chat.dart';
@@ -46,6 +47,10 @@ class _TslFacilityManagerAppState extends State<TslFacilityManagerApp> {
           value: sl<WorkOrderRepository>(),
         ),
         RepositoryProvider<ChatRepository>.value(value: sl<ChatRepository>()),
+        RepositoryProvider<AttendanceRepository>.value(
+          value: sl<AttendanceRepository>(),
+        ),
+        RepositoryProvider<LocationService>.value(value: sl<LocationService>()),
       ],
       child: _providers(),
     );

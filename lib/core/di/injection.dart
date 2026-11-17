@@ -1,6 +1,10 @@
 import 'package:get_it/get_it.dart';
 
-import '../../features/attendance/presentation/attendance_page.dart';
+import '../../features/attendance/data/firebase_attendance_repository.dart';
+import '../../features/attendance/data/geolocator_location_service.dart';
+import '../../features/attendance/data/sample_attendance.dart';
+import '../../features/attendance/domain/attendance.dart';
+import '../../features/attendance/presentation/attendance_cubit.dart';
 import '../../features/auth/data/firebase_auth_repository.dart';
 import '../../features/auth/data/sample_auth_repository.dart';
 import '../../features/auth/domain/auth_repository.dart';
@@ -31,6 +35,12 @@ void configureDependencies({bool useFirebase = false}) {
         () => FirestoreChatRepository(
           workOrderDocId: sl<FirestoreWorkOrderRepository>().docIdFor,
         ),
+      )
+      ..registerLazySingleton<AttendanceRepository>(
+        FirebaseAttendanceRepository.new,
+      )
+      ..registerLazySingleton<LocationService>(
+        () => const GeolocatorLocationService(),
       );
   } else {
     sl
@@ -42,6 +52,12 @@ void configureDependencies({bool useFirebase = false}) {
         () => InMemoryChatRepository(
           workOrders: sl<InMemoryWorkOrderRepository>(),
         ),
+      )
+      ..registerLazySingleton<AttendanceRepository>(
+        InMemoryAttendanceRepository.new,
+      )
+      ..registerLazySingleton<LocationService>(
+        () => const SampleLocationService(),
       );
   }
 
@@ -60,7 +76,12 @@ void configureDependencies({bool useFirebase = false}) {
         scope: useFirebase ? sl<AuthRepository>().watchUser() : null,
       ),
     )
-    ..registerFactory(AttendanceCubit.new)
+    ..registerFactory(
+      () => AttendanceCubit(
+        sl(),
+        signedIn: useFirebase ? sl<AuthRepository>().watchUser() : null,
+      ),
+    )
     ..registerFactory(
       () => ProfileCubit(auth: useFirebase ? sl<AuthRepository>() : null),
     )

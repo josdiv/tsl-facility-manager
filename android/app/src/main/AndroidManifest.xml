@@ -1,6 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Firebase needs the network in release builds too. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- GPS clock-in checks the person is inside their facility. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <application
         android:label="TSL Facility Manager"
         android:name="${applicationName}"
