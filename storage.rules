@@ -1,0 +1,87 @@
+rules_version = '2';
+
+// TSL Facility Manager Cloud Storage rules. Paths and limits are described in
+// docs/firestore-schema.md ("Cloud Storage layout"). Access follows the
+// matching Firestore documents, so these rules read Firestore.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function me() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function active() {
+      return request.auth != null
+        && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
+        && me().status == 'active';
+    }
+
+    function image(maxMb) {
+      return request.resource.size < maxMb * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp|heic|heif)');
+    }
+
+    function canReadWorkOrder(order) {
+      return me().role == 'admin'
+        || (me().role == 'client' && order.clientId == request.auth.uid)
+        || (me().role == 'staff' && order.assignedToId == request.auth.uid)
+        || (me().role == 'supervisor' && order.locationId == me().locationId);
+    }
+
+    match /workOrders/{workOrderId}/{kind}/{fileName} {
+      function order() {
+        return firestore.get(/databases/(default)/documents/workOrders/$(workOrderId)).data;
+      }
+
+      function orderExists() {
+        return firestore.exists(/databases/(default)/documents/workOrders/$(workOrderId));
+      }
+
+      allow read: if active()
+        && kind in ['report', 'work', 'return']
+        && orderExists()
+        && canReadWorkOrder(order());
+
+      // Files are never replaced or deleted by the app. Cleanup of photos
+      // that never got attached is done by a Cloud Function.
+      allow update, delete: if false;
+
+      allow create: if active() && image(10) && (
+        // A client uploads report photos just before calling reportIssue,
+        // using the work order ID the app picked.
+        (kind == 'report' && me().role == 'client' && !orderExists())
+        // The technician uploads proof while the task is in their hands.
+        || (kind == 'work' && orderExists()
+            && me().role == 'staff'
+            && order().assignedToId == request.auth.uid
+            && order().status in ['in_progress', 'returned'])
+        // The supervisor uploads evidence when returning the work.
+        || (kind == 'return' && orderExists()
+            && me().role == 'supervisor'
+            && order().locationId == me().locationId
+            && order().status == 'pending_review')
+      );
+    }
+
+    match /documents/{documentId}/{fileName} {
+      allow read: if active() && (
+        me().role == 'admin'
+        || (me().role in ['staff', 'supervisor']
+            && firestore.get(/databases/(default)/documents/documents/$(documentId)).data.locationId == me().locationId)
+      );
+      allow write: if active() && me().role == 'admin'
+        && (request.resource == null || request.resource.size < 25 * 1024 * 1024);
+    }
+
+    match /inventory/{itemId}/{fileName} {
+      allow read: if active() && me().role in ['admin', 'staff', 'supervisor'];
+      allow write: if active() && me().role == 'admin'
+        && (request.resource == null || image(10));
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

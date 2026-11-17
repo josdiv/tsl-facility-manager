@@ -1,0 +1,537 @@
+rules_version = '2';
+
+// TSL Facility Manager security rules. The data contract they enforce is in
+// docs/firestore-schema.md, and the tests are in tool/firebase_rules_test.
+//
+// Cloud Functions use the Admin SDK and bypass these rules. Anything marked
+// "server" in the schema is therefore read-only here.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------------------------------------------------------------- Users
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc(uid) {
+      return get(/databases/$(database)/documents/users/$(uid));
+    }
+
+    function me() {
+      return userDoc(request.auth.uid).data;
+    }
+
+    // Signed in, has an active user document and, for clients, belongs to an
+    // active company.
+    function active() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && me().status == 'active'
+        && (me().role != 'client' || companyActive(me().companyId));
+    }
+
+    function companyActive(companyId) {
+      return companyId is string
+        && get(/databases/$(database)/documents/companies/$(companyId)).data.status == 'active';
+    }
+
+    function isAdmin() {
+      return active() && me().role == 'admin';
+    }
+
+    function isClient() {
+      return active() && me().role == 'client';
+    }
+
+    function isFieldTeam() {
+      return active() && me().role in ['staff', 'supervisor'];
+    }
+
+    function isSupervisorAt(locationId) {
+      return active() && me().role == 'supervisor' && me().locationId == locationId;
+    }
+
+    function isFieldTeamAt(locationId) {
+      return isFieldTeam() && me().locationId == locationId;
+    }
+
+    function clientCanUseLocation(locationId) {
+      return isClient()
+        && locationId in get(/databases/$(database)/documents/companies/$(me().companyId)).data.locationIds;
+    }
+
+    // ------------------------------------------------------------- Helpers
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function changedKeys() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    function auditCreate() {
+      return incoming().createdAt == request.time
+        && incoming().createdBy == request.auth.uid
+        && incoming().updatedAt == request.time
+        && incoming().updatedBy == request.auth.uid;
+    }
+
+    function auditUpdate() {
+      return incoming().updatedAt == request.time
+        && incoming().updatedBy == request.auth.uid
+        && !changedKeys().hasAny(['createdAt', 'createdBy']);
+    }
+
+    function text(value, min, max) {
+      return value is string && value.size() >= min && value.size() <= max;
+    }
+
+    function optionalText(value, max) {
+      return value == null || text(value, 0, max);
+    }
+
+    function optionalField(data, key) {
+      return data.get(key, null);
+    }
+
+    function wholeNumber(value, min) {
+      return value is int && value >= min;
+    }
+
+    // A list of at most `max` (up to 6) Storage paths under
+    // workOrders/{id}/{kind}/. Rules can't loop, so each slot is checked.
+    function photoPath(path, id, kind) {
+      return path is string && path.matches('workOrders/' + id + '/' + kind + '/[^/]+');
+    }
+
+    function photoList(list, id, kind, max) {
+      return list is list && list.size() <= max
+        && (list.size() < 1 || photoPath(list[0], id, kind))
+        && (list.size() < 2 || photoPath(list[1], id, kind))
+        && (list.size() < 3 || photoPath(list[2], id, kind))
+        && (list.size() < 4 || photoPath(list[3], id, kind))
+        && (list.size() < 5 || photoPath(list[4], id, kind))
+        && (list.size() < 6 || photoPath(list[5], id, kind));
+    }
+
+    // ---------------------------------------------------------------- users
+
+    match /users/{uid} {
+      allow get: if active()
+        && (request.auth.uid == uid || me().role == 'admin' || isSupervisorAt(resource.data.locationId));
+      // Supervisors list their team with where('locationId', '==', theirs).
+      allow list: if isAdmin() || isSupervisorAt(resource.data.locationId);
+
+      // Accounts are created by the createUser function with the Auth user.
+      allow create, delete: if false;
+
+      allow update: if (request.auth.uid == uid && active() && selfUpdate())
+        || (isAdmin() && adminUserUpdate());
+
+      function selfUpdate() {
+        return auditUpdate()
+          && changedKeys().hasOnly(['name', 'phone', 'locationId', 'locationName', 'updatedAt', 'updatedBy'])
+          && text(incoming().name, 1, 100)
+          && optionalText(incoming().phone, 20)
+          && (!changedKeys().hasAny(['locationId', 'locationName']) || clientPicksLocation());
+      }
+
+      // Clients choose their facility from their company's list. The admin
+      // assigns everyone else's.
+      function clientPicksLocation() {
+        return resource.data.role == 'client'
+          && clientCanUseLocation(incoming().locationId)
+          && incoming().locationName
+            == get(/databases/$(database)/documents/locations/$(incoming().locationId)).data.name;
+      }
+
+      function adminUserUpdate() {
+        // Email changes go through a function so Firebase Auth stays in step.
+        return auditUpdate()
+          && !changedKeys().hasAny(['email', 'onShift', 'lastLoginAt'])
+          && incoming().role in ['admin', 'supervisor', 'staff', 'client']
+          && incoming().status in ['active', 'inactive', 'exited']
+          && text(incoming().name, 1, 100);
+      }
+
+      match /notifications/{notificationId} {
+        allow read: if request.auth.uid == uid && active();
+        allow update: if request.auth.uid == uid && active()
+          && changedKeys().hasOnly(['readAt'])
+          && incoming().readAt == request.time;
+        allow delete: if request.auth.uid == uid && active();
+        allow create: if false;
+      }
+
+      match /fcmTokens/{token} {
+        allow read, delete: if request.auth.uid == uid && active();
+        allow create, update: if request.auth.uid == uid && active()
+          && incoming().keys().hasOnly(['platform', 'createdAt'])
+          && incoming().platform in ['android', 'ios', 'web']
+          && incoming().createdAt == request.time;
+      }
+    }
+
+    // ------------------------------------------------------------ companies
+
+    match /companies/{companyId} {
+      allow read: if isAdmin() || (isClient() && me().companyId == companyId);
+      allow create: if isAdmin() && auditCreate() && validCompany();
+      allow update: if isAdmin() && auditUpdate() && validCompany();
+      allow delete: if false;
+
+      function validCompany() {
+        return text(incoming().name, 1, 200)
+          && incoming().status in ['active', 'locked', 'disabled']
+          && (incoming().monthlyWorkOrderLimit == null || wholeNumber(incoming().monthlyWorkOrderLimit, 0))
+          && incoming().locationIds is list;
+      }
+
+      match /usage/{month} {
+        allow read: if isAdmin() || (isClient() && me().companyId == companyId);
+        allow write: if false;
+      }
+    }
+
+    // ---------------------------------------------------- Reference data
+
+    match /locations/{locationId} {
+      allow get: if isAdmin() || isFieldTeam() || clientCanUseLocation(locationId);
+      allow list: if isAdmin() || isFieldTeam();
+      allow create: if isAdmin() && auditCreate() && validLocation();
+      allow update: if isAdmin() && auditUpdate() && validLocation()
+        && !changedKeys().hasAny(['zoneCount', 'assetCount']);
+      allow delete: if isAdmin();
+
+      function validLocation() {
+        return text(incoming().name, 1, 200)
+          && incoming().type in ['office', 'warehouse', 'shopping_mall', 'residential', 'industrial', 'other']
+          && text(incoming().address, 1, 500)
+          && incoming().geo is latlng
+          && incoming().radiusM is number && incoming().radiusM > 0 && incoming().radiusM <= 5000
+          && text(incoming().timeZone, 1, 64)
+          && incoming().status in ['active', 'inactive'];
+      }
+    }
+
+    match /zones/{zoneId} {
+      allow read: if isAdmin() || isFieldTeam() || clientCanUseLocation(resource.data.locationId);
+      allow create: if isAdmin() && auditCreate() && validZone();
+      allow update: if isAdmin() && auditUpdate() && validZone();
+      allow delete: if isAdmin();
+
+      function validZone() {
+        return text(incoming().locationId, 1, 128)
+          && text(incoming().name, 1, 200)
+          && incoming().status in ['active', 'inactive'];
+      }
+    }
+
+    match /assets/{assetId} {
+      allow read: if isAdmin() || isFieldTeam();
+      allow create: if isAdmin() && auditCreate() && validAsset() && !('ref' in incoming());
+      allow update: if isAdmin() && auditUpdate() && validAsset() && !changedKeys().hasAny(['ref']);
+      allow delete: if isAdmin();
+
+      function validAsset() {
+        return text(incoming().locationId, 1, 128)
+          && text(incoming().zoneId, 1, 128)
+          && text(incoming().equipmentName, 1, 200)
+          && incoming().status in ['active', 'maintenance', 'inactive'];
+      }
+    }
+
+    match /documents/{documentId} {
+      allow read: if isAdmin() || isFieldTeamAt(resource.data.locationId);
+      allow create: if isAdmin() && auditCreate() && validDocument();
+      allow update: if isAdmin() && auditUpdate() && validDocument();
+      allow delete: if isAdmin();
+
+      function validDocument() {
+        return text(incoming().locationId, 1, 128)
+          && text(incoming().title, 1, 200)
+          && incoming().category in ['compliance', 'manual', 'contract', 'report', 'other']
+          && incoming().filePath is string
+          && incoming().filePath.matches('documents/' + documentId + '/[^/]+');
+      }
+    }
+
+    match /slaSchedules/{slaId} {
+      allow read: if isAdmin() || isFieldTeamAt(resource.data.locationId);
+      allow create: if isAdmin() && auditCreate() && validSchedule();
+      allow update: if isAdmin() && auditUpdate() && validSchedule()
+        && !changedKeys().hasAny(['nextRunAt', 'lastRunAt']);
+      allow delete: if isAdmin();
+
+      function validSchedule() {
+        return text(incoming().task, 1, 200)
+          && text(incoming().locationId, 1, 128)
+          && incoming().frequency in ['daily', 'weekdays', 'weekends', 'weekly', 'fortnightly',
+                                      'monthly', 'quarterly', 'biannually', 'annually']
+          && incoming().startAt is timestamp
+          && incoming().dueTime is string
+          && incoming().dueTime.matches('([01][0-9]|2[0-3]):[0-5][0-9]')
+          && incoming().priority in ['low', 'medium', 'high', 'critical']
+          && text(incoming().assignedToId, 1, 128)
+          && text(incoming().supervisorId, 1, 128)
+          && incoming().status in ['active', 'inactive'];
+      }
+    }
+
+    // ---------------------------------------------------------- workOrders
+
+    function canReadWorkOrder(order) {
+      return active() && (
+        me().role == 'admin'
+        || (me().role == 'client' && order.clientId == request.auth.uid)
+        || (me().role == 'staff' && order.assignedToId == request.auth.uid)
+        || (me().role == 'supervisor' && order.locationId == me().locationId)
+      );
+    }
+
+    function workOrder(id) {
+      return get(/databases/$(database)/documents/workOrders/$(id)).data;
+    }
+
+    match /workOrders/{workOrderId} {
+      allow read: if canReadWorkOrder(resource.data);
+
+      // Created by the reportIssue / createWorkOrder functions and the SLA
+      // scheduler, which assign the ref and enforce monthly limits.
+      allow create, delete: if false;
+
+      allow update: if active() && auditUpdate() && (
+        adminChange()
+        || start()
+        || submit()
+        || confirm()
+        || returnForCorrection()
+        || reassign()
+      );
+
+      function current() {
+        return resource.data;
+      }
+
+      function isAssignee() {
+        return me().role == 'staff' && current().assignedToId == request.auth.uid;
+      }
+
+      function isLocationSupervisor() {
+        return me().role == 'supervisor' && current().locationId == me().locationId;
+      }
+
+      function only(keys) {
+        return changedKeys().hasOnly(keys.concat(['updatedAt', 'updatedBy']));
+      }
+
+      function moves(from, to) {
+        return current().status in from && incoming().status == to;
+      }
+
+      function adminChange() {
+        return me().role == 'admin'
+          && !changedKeys().hasAny(['ref', 'lastMessageAt', 'lastMessagePreview'])
+          && incoming().status in ['open', 'in_progress', 'pending_review', 'returned', 'completed', 'cancelled']
+          && incoming().priority in ['low', 'medium', 'high', 'critical'];
+      }
+
+      function start() {
+        return isAssignee()
+          && moves(['open'], 'in_progress')
+          && only(['status', 'startedAt'])
+          && incoming().startedAt == request.time;
+      }
+
+      function submit() {
+        return isAssignee()
+          && moves(['in_progress', 'returned'], 'pending_review')
+          && only(['status', 'workNote', 'workPhotos', 'submittedAt'])
+          && text(incoming().workNote, 1, 4000)
+          && photoList(incoming().workPhotos, workOrderId, 'work', 6)
+          && incoming().submittedAt == request.time;
+      }
+
+      function confirm() {
+        return isLocationSupervisor()
+          && moves(['pending_review'], 'completed')
+          && only(['status', 'inspectionChecks', 'inspectionNote', 'completedAt'])
+          && incoming().inspectionChecks is list && incoming().inspectionChecks.size() <= 10
+          && optionalText(optionalField(incoming(), 'inspectionNote'), 4000)
+          && incoming().completedAt == request.time;
+      }
+
+      function returnForCorrection() {
+        return isLocationSupervisor()
+          && moves(['pending_review'], 'returned')
+          && only(['status', 'returnReason', 'returnFeedback', 'returnPhotos', 'returnedAt',
+                   'assignedToId', 'assignedToName'])
+          && incoming().returnReason in ['incomplete_finishing', 'not_satisfactory',
+                                         'safety_concern', 'wrong_resolution']
+          && text(incoming().returnFeedback, 1, 4000)
+          && photoList(incoming().returnPhotos, workOrderId, 'return', 4)
+          && incoming().returnedAt == request.time
+          && (!changedKeys().hasAny(['assignedToId', 'assignedToName']) || validAssignee());
+      }
+
+      function reassign() {
+        return isLocationSupervisor()
+          && !(current().status in ['completed', 'cancelled'])
+          && only(['assignedToId', 'assignedToName', 'supervisorId', 'supervisorName'])
+          && (!changedKeys().hasAny(['assignedToId', 'assignedToName']) || validAssignee())
+          && (!changedKeys().hasAny(['supervisorId', 'supervisorName']) || validSupervisor());
+      }
+
+      // The new technician must be active staff at this location, and the
+      // copied name must be theirs.
+      function validAssignee() {
+        let person = userDoc(incoming().assignedToId).data;
+        return person.role == 'staff'
+          && person.status == 'active'
+          && person.locationId == current().locationId
+          && incoming().assignedToName == person.name;
+      }
+
+      function validSupervisor() {
+        let person = userDoc(incoming().supervisorId).data;
+        return person.role == 'supervisor'
+          && person.status == 'active'
+          && person.locationId == current().locationId
+          && incoming().supervisorName == person.name;
+      }
+
+      match /events/{eventId} {
+        allow read: if canReadWorkOrder(workOrder(workOrderId));
+        allow write: if false;
+      }
+
+      match /messages/{messageId} {
+        allow read: if canReadWorkOrder(workOrder(workOrderId));
+        allow create: if canReadWorkOrder(workOrder(workOrderId))
+          && workOrder(workOrderId).status != 'cancelled'
+          && validMessage();
+        allow update, delete: if false;
+      }
+    }
+
+    function validMessage() {
+      return incoming().keys().hasOnly(['text', 'senderId', 'senderName', 'senderRole', 'sentAt'])
+        && text(incoming().text, 1, 2000)
+        && incoming().senderId == request.auth.uid
+        && incoming().senderName == me().name
+        && incoming().senderRole == me().role
+        && incoming().sentAt == request.time;
+    }
+
+    // ------------------------------------------------------ supportThreads
+
+    match /supportThreads/{uid} {
+      allow read: if active() && (request.auth.uid == uid || me().role == 'admin');
+      allow write: if false;
+
+      match /messages/{messageId} {
+        allow read: if active() && (request.auth.uid == uid || me().role == 'admin');
+        allow create: if active() && (request.auth.uid == uid || me().role == 'admin')
+          && validMessage();
+        allow update, delete: if false;
+      }
+    }
+
+    // ---------------------------------------------------------- attendance
+
+    match /attendance/{attendanceId} {
+      allow read: if active() && (
+        resource.data.userId == request.auth.uid
+        || me().role == 'admin'
+        || isSupervisorAt(resource.data.locationId)
+      );
+      // Clock-in and clock-out go through functions that check the distance.
+      allow create, delete: if false;
+      // Admins can correct the attendance status, nothing else.
+      allow update: if isAdmin() && auditUpdate()
+        && changedKeys().hasOnly(['attendanceStatus', 'updatedAt', 'updatedBy'])
+        && incoming().attendanceStatus in ['present', 'absent', 'off_duty'];
+    }
+
+    // ----------------------------------------------------------- inventory
+
+    match /inventory/{itemId} {
+      allow read: if isAdmin() || isFieldTeamAt(resource.data.locationId);
+      allow create: if isAdmin() && auditCreate() && validItem() && !('ref' in incoming());
+      allow update: if isAdmin() && auditUpdate() && validItem() && !changedKeys().hasAny(['ref']);
+      allow delete: if isAdmin();
+
+      function validItem() {
+        let quantity = incoming().quantity;
+        let threshold = incoming().alertThreshold;
+        return text(incoming().itemName, 1, 200)
+          && text(incoming().locationId, 1, 128)
+          && wholeNumber(quantity, 0)
+          && wholeNumber(threshold, 0)
+          && incoming().stockStatus == (quantity == 0 ? 'out' : (quantity <= threshold ? 'low' : 'ok'))
+          && incoming().status in ['active', 'inactive'];
+      }
+    }
+
+    // -------------------------------------------------------- requisitions
+
+    match /requisitions/{requisitionId} {
+      allow read: if active() && (
+        resource.data.requestedById == request.auth.uid
+        || me().role == 'admin'
+        || isSupervisorAt(resource.data.locationId)
+      );
+
+      allow create: if active() && auditCreate() && (fieldRequest() || adminDelivery());
+
+      // Approval goes through the actionRequisition function, which also
+      // changes the stock.
+      allow update, delete: if false;
+
+      function item() {
+        return get(/databases/$(database)/documents/inventory/$(incoming().inventoryId)).data;
+      }
+
+      function common() {
+        return incoming().keys().hasOnly([
+            'type', 'inventoryId', 'itemName', 'locationId', 'workOrderId', 'workOrderRef',
+            'quantity', 'reason', 'requestedById', 'requestedByName', 'requestedAt', 'status',
+            'createdAt', 'createdBy', 'updatedAt', 'updatedBy'])
+          && incoming().status == 'pending'
+          && wholeNumber(incoming().quantity, 1)
+          && text(incoming().reason, 1, 1000)
+          && incoming().requestedById == request.auth.uid
+          && incoming().requestedByName == me().name
+          && incoming().requestedAt == request.time
+          && item().locationId == incoming().locationId
+          && incoming().itemName == item().itemName;
+      }
+
+      // Staff and supervisors request parts for their own facility,
+      // optionally linked to a work order they can see there.
+      function fieldRequest() {
+        let workOrderId = optionalField(incoming(), 'workOrderId');
+        return me().role in ['staff', 'supervisor']
+          && common()
+          && incoming().type == 'out'
+          && incoming().locationId == me().locationId
+          && (workOrderId == null || (
+            canReadWorkOrder(workOrder(workOrderId))
+            && workOrder(workOrderId).locationId == incoming().locationId
+            && incoming().workOrderRef == workOrder(workOrderId).ref));
+      }
+
+      function adminDelivery() {
+        return me().role == 'admin' && common() && incoming().type == 'in';
+      }
+    }
+
+    // counters, emailCodes and anything not listed above: server only.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
