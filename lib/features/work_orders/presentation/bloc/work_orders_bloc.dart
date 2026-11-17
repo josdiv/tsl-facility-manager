@@ -1,6 +1,8 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/utils/streams.dart';
+import '../../../profile/domain/user_profile.dart';
 import '../../domain/work_order.dart';
 import '../../domain/work_order_repository.dart';
 
@@ -8,6 +10,7 @@ sealed class WorkOrdersEvent {
   const WorkOrdersEvent();
 }
 
+/// Starts following the signed-in user's orders.
 class WorkOrdersRequested extends WorkOrdersEvent {
   const WorkOrdersRequested();
 }
@@ -21,28 +24,27 @@ class WorkOrderChanged extends WorkOrdersEvent {
 }
 
 class IssueReported extends WorkOrdersEvent {
-  const IssueReported({
-    required this.title,
-    required this.description,
-    required this.location,
-    required this.zone,
-    required this.media,
-    required this.submittedBy,
-  });
+  const IssueReported(this.draft, this.client);
 
-  final String title;
-  final String description;
-  final String location;
-  final String zone;
-  final List<String> media;
-  final String submittedBy;
+  final IssueDraft draft;
+  final UserProfile client;
 }
 
 class WorkOrdersState extends Equatable {
-  const WorkOrdersState({this.orders = const [], this.lastReportedId});
+  const WorkOrdersState({
+    this.orders = const [],
+    this.lastReportedId,
+    this.failure,
+    this.failureCount = 0,
+  });
 
   final List<WorkOrder> orders;
   final String? lastReportedId;
+
+  /// The last action that failed. [failureCount] grows with each one, so a
+  /// listener can tell two identical failures apart.
+  final WorkOrderFailure? failure;
+  final int failureCount;
 
   WorkOrder? byId(String id) {
     for (final order in orders) {
@@ -51,11 +53,13 @@ class WorkOrdersState extends Equatable {
     return null;
   }
 
-  List<WorkOrder> submittedBy(String name) =>
-      orders.where((order) => order.submittedBy == name).toList();
+  /// Requests a client submitted.
+  List<WorkOrder> submittedBy(String uid) =>
+      orders.where((order) => order.submittedById == uid).toList();
 
-  List<WorkOrder> assignedTo(String name) =>
-      orders.where((order) => order.assignee == name).toList();
+  /// Work assigned to a technician.
+  List<WorkOrder> assignedTo(String uid) =>
+      orders.where((order) => order.assigneeId == uid).toList();
 
   List<WorkOrder> get awaitingReview =>
       orders.where((order) => order.isAwaitingReview).toList();
@@ -65,28 +69,47 @@ class WorkOrdersState extends Equatable {
       .where((order) => order.status.isActive && !order.isAwaitingReview)
       .toList();
 
+  WorkOrdersState copyWith({
+    List<WorkOrder>? orders,
+    String? lastReportedId,
+    WorkOrderFailure? failure,
+  }) => WorkOrdersState(
+    orders: orders ?? this.orders,
+    lastReportedId: lastReportedId ?? this.lastReportedId,
+    failure: failure ?? this.failure,
+    failureCount: failure == null ? failureCount : failureCount + 1,
+  );
+
   @override
-  List<Object?> get props => [orders, lastReportedId];
+  List<Object?> get props => [orders, lastReportedId, failure, failureCount];
 }
 
 class WorkOrdersBloc extends Bloc<WorkOrdersEvent, WorkOrdersState> {
-  WorkOrdersBloc(this._repository, {DateTime Function()? clock})
-    : _clock = clock ?? DateTime.now,
-      super(const WorkOrdersState()) {
+  /// [scope] is the signed-in user, whose orders to follow. Sample data has
+  /// no signed-in user, so it defaults to a single null: every order.
+  WorkOrdersBloc(
+    this._repository, {
+    Stream<UserProfile?>? scope,
+    DateTime Function()? clock,
+  }) : _scope = scope ?? Stream.value(null),
+       _clock = clock ?? DateTime.now,
+       super(const WorkOrdersState()) {
     on<WorkOrdersRequested>(_onRequested);
     on<WorkOrderChanged>(_onChanged);
     on<IssueReported>(_onReported);
   }
 
   final WorkOrderRepository _repository;
+  final Stream<UserProfile?> _scope;
   final DateTime Function() _clock;
 
   Future<void> _onRequested(
     WorkOrdersRequested event,
     Emitter<WorkOrdersState> emit,
-  ) async {
-    emit(WorkOrdersState(orders: await _repository.getAll()));
-  }
+  ) => emit.forEach(
+    _scope.switchMap(_repository.watch),
+    onData: (orders) => state.copyWith(orders: orders),
+  );
 
   Future<void> _onChanged(
     WorkOrderChanged event,
@@ -94,33 +117,25 @@ class WorkOrdersBloc extends Bloc<WorkOrdersEvent, WorkOrdersState> {
   ) async {
     final order = state.byId(event.id);
     if (order == null) return;
-    await _repository.save(event.change(order, _clock()));
-    emit(WorkOrdersState(orders: await _repository.getAll()));
+    try {
+      await _repository.update(order, event.change(order, _clock()));
+    } on WorkOrderFailure catch (failure) {
+      emit(state.copyWith(failure: failure));
+    } on StateError catch (error) {
+      // The order moved on before this change, e.g. someone else returned it.
+      emit(state.copyWith(failure: WorkOrderFailure(error.message)));
+    }
   }
 
   Future<void> _onReported(
     IssueReported event,
     Emitter<WorkOrdersState> emit,
   ) async {
-    final now = _clock();
-    final id = await _repository.nextId();
-    await _repository.save(
-      WorkOrder(
-        id: id,
-        title: event.title,
-        description: event.description,
-        type: WorkOrderType.client,
-        status: WorkOrderStatus.open,
-        location: event.location,
-        zone: event.zone,
-        due: now.add(const Duration(hours: 24)),
-        submittedBy: event.submittedBy,
-        reportMedia: event.media,
-        history: [WorkOrderEvent('Issue reported', now)],
-      ),
-    );
-    emit(
-      WorkOrdersState(orders: await _repository.getAll(), lastReportedId: id),
-    );
+    try {
+      final id = await _repository.report(event.draft, event.client);
+      emit(state.copyWith(lastReportedId: id));
+    } on WorkOrderFailure catch (failure) {
+      emit(state.copyWith(failure: failure));
+    }
   }
 }

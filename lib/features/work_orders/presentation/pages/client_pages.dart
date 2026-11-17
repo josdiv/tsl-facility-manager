@@ -14,12 +14,14 @@ import '../../../../core/widgets/labelled_field.dart';
 import '../../../../core/widgets/link_text_button.dart';
 import '../../../../core/widgets/media_widgets.dart';
 import '../../../../core/widgets/page_frames.dart';
-import '../../../profile/presentation/profile_cubit.dart';
 import '../../../../core/widgets/progress_timeline.dart';
 import '../../../../core/widgets/section_header.dart';
 import '../../../../core/widgets/stat_tile.dart';
+import '../../../profile/domain/user_profile.dart';
+import '../../../profile/presentation/profile_cubit.dart';
 import '../../data/sample_work_orders.dart';
 import '../../domain/work_order.dart';
+import '../../domain/work_order_repository.dart';
 import '../bloc/work_orders_bloc.dart';
 import '../widgets/work_order_card.dart';
 import '../widgets/work_order_scope.dart';
@@ -29,8 +31,9 @@ class ClientHomePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final uid = context.profileOf(AppRole.client).uid;
     final orders = context.select<WorkOrdersBloc, List<WorkOrder>>(
-      (bloc) => bloc.state.submittedBy(sampleClient),
+      (bloc) => bloc.state.submittedBy(uid),
     );
     final text = Theme.of(context).textTheme;
     final active = orders.where((o) => o.status.isActive).length;
@@ -118,8 +121,9 @@ class MyRequestsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final uid = context.profileOf(AppRole.client).uid;
     final orders = context.select<WorkOrdersBloc, List<WorkOrder>>(
-      (bloc) => bloc.state.submittedBy(sampleClient),
+      (bloc) => bloc.state.submittedBy(uid),
     );
     final active = orders.where((o) => o.status.isActive).toList();
     final resolved = orders.where((o) => !o.status.isActive).toList();
@@ -176,28 +180,22 @@ class ReportIssuePage extends StatefulWidget {
 }
 
 class _ReportIssuePageState extends State<ReportIssuePage> {
-  /// Zones for each facility. Sample data until Firestore arrives.
-  static const _zonesByLocation = {
-    'Marina Towers, Lagos': ['Tower A · Floor 3', 'Reception', 'Car park'],
-    'Cedar Court, Abuja': ['Main hall', 'Basement plant room', 'Car park'],
-    'Harbour Point, Lekki': ['Lobby', 'Floor 2 offices', 'Rooftop'],
-  };
-  static final _locations = _zonesByLocation.keys.toList();
-
   final _form = GlobalKey<FormState>();
   final _title = TextEditingController();
   final _description = TextEditingController();
-  // Starts on the facility the client chose in their profile.
-  late var _location = _defaultLocation();
-  late var _zone = _zonesByLocation[_location]!.first;
-
-  String _defaultLocation() {
-    final facility = context.read<ProfileCubit>().of(AppRole.client).facility;
-    return _zonesByLocation.containsKey(facility) ? facility : _locations.first;
-  }
-
+  var _facilities = const <Facility>[];
+  var _zones = const <Zone>[];
+  Facility? _location;
+  Zone? _zone;
   var _media = const <String>[];
   var _formVersion = 0;
+  var _sending = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFacilities();
+  }
 
   @override
   void dispose() {
@@ -206,16 +204,56 @@ class _ReportIssuePageState extends State<ReportIssuePage> {
     super.dispose();
   }
 
+  /// Starts on the facility the client chose in their profile.
+  Future<void> _loadFacilities() async {
+    final profiles = context.read<ProfileCubit>();
+    final facilities = await profiles.facilityOptions();
+    if (!mounted) return;
+    final chosen = profiles.of(AppRole.client).locationId;
+    setState(() => _facilities = facilities);
+    await _pickLocation(
+      facilities.where((f) => f.id == chosen).firstOrNull ??
+          facilities.firstOrNull,
+    );
+  }
+
+  Future<void> _pickLocation(Facility? location) async {
+    setState(() {
+      _location = location;
+      _zones = const [];
+      _zone = null;
+    });
+    if (location == null) return;
+    final zones = await context.read<WorkOrderRepository>().zones(location.id);
+    if (!mounted || _location != location) return;
+    setState(() {
+      _zones = zones;
+      _zone = zones.firstOrNull;
+    });
+  }
+
   void _submit() {
-    if (!_form.currentState!.validate()) return;
+    if (_sending || !_form.currentState!.validate()) return;
+    final location = _location;
+    final zone = _zone;
+    if (location == null || zone == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Choose a location and zone first.')),
+      );
+      return;
+    }
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() => _sending = true);
     context.read<WorkOrdersBloc>().add(
       IssueReported(
-        title: _title.text.trim(),
-        description: _description.text.trim(),
-        location: _location,
-        zone: _zone,
-        media: _media,
-        submittedBy: sampleClient,
+        IssueDraft(
+          title: _title.text.trim(),
+          description: _description.text.trim(),
+          location: location,
+          zone: zone,
+          media: _media,
+        ),
+        context.read<ProfileCubit>().of(AppRole.client),
       ),
     );
   }
@@ -228,21 +266,41 @@ class _ReportIssuePageState extends State<ReportIssuePage> {
     _title.clear();
     _description.clear();
     setState(() {
+      _sending = false;
       _media = const [];
-      _location = _defaultLocation();
-      _zone = _zonesByLocation[_location]!.first;
       _formVersion++;
     });
     context.push(AppRoutes.clientRequest(id));
   }
 
+  void _onFailed(BuildContext context, WorkOrdersState state) {
+    if (!_sending) return;
+    setState(() => _sending = false);
+    final failure = state.failure!;
+    if (failure.code == 'monthly-limit') {
+      context.push(AppRoutes.previewLimit);
+      return;
+    }
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(failure.message)));
+  }
+
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
-    return BlocListener<WorkOrdersBloc, WorkOrdersState>(
-      listenWhen: (before, after) =>
-          after.lastReportedId != before.lastReportedId,
-      listener: _onReported,
+    return MultiBlocListener(
+      listeners: [
+        BlocListener<WorkOrdersBloc, WorkOrdersState>(
+          listenWhen: (before, after) =>
+              after.lastReportedId != before.lastReportedId,
+          listener: _onReported,
+        ),
+        BlocListener<WorkOrdersBloc, WorkOrdersState>(
+          listenWhen: (before, after) =>
+              after.failureCount != before.failureCount,
+          listener: _onFailed,
+        ),
+      ],
       child: TabPage(
         title: 'Report an issue',
         role: AppRole.client,
@@ -260,22 +318,24 @@ class _ReportIssuePageState extends State<ReportIssuePage> {
                   style: text.bodyMedium,
                 ),
                 const SizedBox(height: 16),
-                LabelledDropdown(
-                  label: 'Location',
-                  options: _locations,
-                  initialValue: _location,
-                  onChanged: (value) => setState(() {
-                    _location = value;
-                    _zone = _zonesByLocation[value]!.first;
-                  }),
-                ),
-                LabelledDropdown(
-                  // A new location brings its own zones, so start afresh.
-                  key: ValueKey(_location),
-                  label: 'Building / zone',
-                  options: _zonesByLocation[_location]!,
-                  onChanged: (value) => _zone = value,
-                ),
+                if (_facilities.isNotEmpty)
+                  LabelledDropdown(
+                    label: 'Location',
+                    options: [for (final f in _facilities) f.name],
+                    initialValue: _location?.name,
+                    onChanged: (value) => _pickLocation(
+                      _facilities.firstWhere((f) => f.name == value),
+                    ),
+                  ),
+                if (_zones.isNotEmpty)
+                  LabelledDropdown(
+                    // A new location brings its own zones, so start afresh.
+                    key: ValueKey(_location),
+                    label: 'Building / zone',
+                    options: [for (final z in _zones) z.name],
+                    onChanged: (value) =>
+                        _zone = _zones.firstWhere((z) => z.name == value),
+                  ),
                 LabelledTextField(
                   label: 'Issue title',
                   hint: 'Air conditioning not cooling',
@@ -296,8 +356,8 @@ class _ReportIssuePageState extends State<ReportIssuePage> {
                   onChanged: (media) => _media = media,
                 ),
                 FilledButton(
-                  onPressed: _submit,
-                  child: const Text('Submit issue'),
+                  onPressed: _sending ? null : _submit,
+                  child: Text(_sending ? 'Sending…' : 'Submit issue'),
                 ),
               ],
             ),
@@ -332,7 +392,11 @@ class RequestTrackingPage extends StatelessWidget {
             Text(order.title, style: text.headlineSmall),
             const SizedBox(height: 4),
             Text(
-              '${order.id} · Submitted ${dateTimeLabel(order.history.first.at, now)}',
+              [
+                order.id,
+                if (order.history.firstOrNull case final first?)
+                  'Submitted ${dateTimeLabel(first.at, now)}',
+              ].join(' · '),
               style: text.bodyMedium,
             ),
             const SizedBox(height: 14),

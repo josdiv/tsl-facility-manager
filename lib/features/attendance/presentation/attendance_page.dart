@@ -3,8 +3,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/router/app_routes.dart';
-
-import '../../profile/presentation/profile_cubit.dart';
 import '../../../core/session/app_role.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_card.dart';
@@ -12,6 +10,7 @@ import '../../../core/widgets/eyebrow.dart';
 import '../../../core/widgets/info_banner.dart';
 import '../../../core/widgets/key_value_row.dart';
 import '../../../core/widgets/page_frames.dart';
+import '../../profile/presentation/profile_cubit.dart';
 
 /// Which roles are on the clock. Sample data until GPS is connected.
 class AttendanceCubit extends Cubit<Set<AppRole>> {

@@ -3,7 +3,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../core/router/app_routes.dart';
-import '../../profile/presentation/profile_cubit.dart';
 import '../../../core/session/app_role.dart';
 import '../../../core/utils/date_labels.dart';
 import '../../../core/widgets/app_badge.dart';
@@ -11,6 +10,7 @@ import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/info_banner.dart';
 import '../../../core/widgets/labelled_field.dart';
 import '../../../core/widgets/page_frames.dart';
+import '../../profile/presentation/profile_cubit.dart';
 import '../../work_orders/data/sample_work_orders.dart';
 import '../../work_orders/presentation/bloc/work_orders_bloc.dart';
 import '../../work_orders/presentation/widgets/work_order_scope.dart';
@@ -158,7 +158,7 @@ class _PartsRequestPageState extends State<PartsRequestPage> {
     final orders = context
         .watch<WorkOrdersBloc>()
         .state
-        .assignedTo(sampleStaff)
+        .assignedTo(context.profileOf(AppRole.staff).uid)
         .where((order) => order.status.isActive)
         .toList();
     String labelFor(String id) {

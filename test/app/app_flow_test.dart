@@ -298,7 +298,7 @@ void main() {
     expect(find.text('David Adeyemi'), findsOneWidget);
     expect(find.textContaining('Overdue, do this first'), findsOneWidget);
     expect(
-      find.text('Reassigned to David Adeyemi · notification sent'),
+      find.text('Assigned to David Adeyemi · notification sent'),
       findsOneWidget,
     );
   });

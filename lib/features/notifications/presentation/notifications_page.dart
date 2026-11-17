@@ -7,6 +7,7 @@ import '../../../core/session/app_role.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/page_frames.dart';
+import '../../profile/presentation/profile_cubit.dart';
 import '../../work_orders/data/sample_work_orders.dart';
 import '../../work_orders/domain/work_order.dart';
 import '../../work_orders/presentation/bloc/work_orders_bloc.dart';
@@ -30,7 +31,11 @@ class AppNotification {
 
 /// Sample alerts per role. Returned work comes from live sample data, so the
 /// staff alert appears as soon as a supervisor returns a task.
-List<AppNotification> notificationsFor(AppRole role, WorkOrdersState state) {
+List<AppNotification> notificationsFor(
+  AppRole role,
+  WorkOrdersState state,
+  String uid,
+) {
   return switch (role) {
     AppRole.client => [
       AppNotification(
@@ -49,7 +54,7 @@ List<AppNotification> notificationsFor(AppRole role, WorkOrdersState state) {
       ),
     ],
     AppRole.staff => [
-      for (final order in state.assignedTo(sampleStaff))
+      for (final order in state.assignedTo(uid))
         if (order.status == WorkOrderStatus.returned)
           AppNotification(
             Icons.undo,
@@ -119,6 +124,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
     final all = notificationsFor(
       widget.role,
       context.watch<WorkOrdersBloc>().state,
+      context.profileOf(widget.role).uid,
     );
     final unread = all
         .where((n) => !_read.contains(n.title + n.detail))

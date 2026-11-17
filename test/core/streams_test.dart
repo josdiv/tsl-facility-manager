@@ -34,4 +34,27 @@ void main() {
       expect(profiles.hasListener, isFalse);
     },
   );
+
+  test(
+    'switchMap keeps following the inner stream after the outer ends',
+    () async {
+      final updates = StreamController<int>();
+      final seen = <int>[];
+      final done = Completer<void>();
+      Stream.value('only')
+          .switchMap((_) => updates.stream)
+          .listen(seen.add, onDone: done.complete);
+
+      updates
+        ..add(1)
+        ..add(2);
+      await pumpEventQueue();
+      expect(seen, [1, 2]);
+      expect(done.isCompleted, isFalse);
+
+      await updates.close();
+      await pumpEventQueue();
+      expect(done.isCompleted, isTrue);
+    },
+  );
 }

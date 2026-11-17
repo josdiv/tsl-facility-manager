@@ -1,14 +1,14 @@
+import '../../../core/firebase/firebase_env.dart';
+import '../../../core/session/app_role.dart';
+import '../../../core/utils/streams.dart';
+import '../../profile/domain/user_profile.dart';
+import '../domain/auth_repository.dart';
+
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-
-import '../../../core/firebase/firebase_env.dart';
-import '../../../core/utils/streams.dart';
-import '../../../core/session/app_role.dart';
-import '../../profile/domain/user_profile.dart';
-import '../domain/auth_repository.dart';
 
 /// Sign-in with Firebase Auth. Profiles come from `users/{uid}`.
 class FirebaseAuthRepository implements AuthRepository {

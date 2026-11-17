@@ -3,7 +3,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/router/app_routes.dart';
-import '../../../profile/presentation/profile_cubit.dart';
 import '../../../../core/session/app_role.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/date_labels.dart';
@@ -20,18 +19,41 @@ import '../../../../core/widgets/progress_timeline.dart';
 import '../../../../core/widgets/section_header.dart';
 import '../../../../core/widgets/stat_tile.dart';
 import '../../../attendance/presentation/attendance_page.dart';
+import '../../../profile/presentation/profile_cubit.dart';
 import '../../domain/work_order.dart';
+import '../../domain/work_order_repository.dart';
 import '../bloc/work_orders_bloc.dart';
 import '../widgets/work_order_card.dart';
 import '../widgets/work_order_scope.dart';
 
-/// Workers assigned to the sample facility.
-const facilityWorkers = [
-  ('Emeka Okafor', 'EO', 'HVAC technician', 'On site'),
-  ('Tunde Bakare', 'TB', 'Electrician', 'On site'),
-  ('David Adeyemi', 'DA', 'General maintenance', 'On site'),
-  ('Grace Eze', 'GE', 'Safety officer', 'Off shift'),
-];
+/// The supervisor's staff at their facility, kept up to date.
+class TeamBuilder extends StatefulWidget {
+  const TeamBuilder({required this.builder, super.key});
+
+  final Widget Function(BuildContext context, List<TeamMember> team) builder;
+
+  @override
+  State<TeamBuilder> createState() => _TeamBuilderState();
+}
+
+class _TeamBuilderState extends State<TeamBuilder> {
+  String? _locationId;
+  Stream<List<TeamMember>> _team = const Stream.empty();
+
+  @override
+  Widget build(BuildContext context) {
+    final locationId = context.profileOf(AppRole.supervisor).locationId ?? '';
+    if (locationId != _locationId) {
+      _locationId = locationId;
+      _team = context.read<WorkOrderRepository>().watchTeam(locationId);
+    }
+    return StreamBuilder<List<TeamMember>>(
+      stream: _team,
+      builder: (context, snapshot) =>
+          widget.builder(context, snapshot.data ?? const []),
+    );
+  }
+}
 
 void _toast(BuildContext context, String message) =>
     ScaffoldMessenger.of(context)
@@ -89,20 +111,22 @@ class SupervisorHomePage extends StatelessWidget {
             ],
           ),
         ),
-        StatRow(
-          first: StatTile(
-            icon: Icons.fact_check_outlined,
-            label: 'Awaiting review',
-            value: '${queue.length}',
-            caption: 'Staff submissions',
-          ),
-          second: const StatTile(
-            icon: Icons.groups_outlined,
-            label: 'Team on-site',
-            value: '3 / 4',
-            caption: 'GPS verified',
-            iconColor: AppColors.teal,
-            iconBackground: AppColors.successSoft,
+        TeamBuilder(
+          builder: (context, team) => StatRow(
+            first: StatTile(
+              icon: Icons.fact_check_outlined,
+              label: 'Awaiting review',
+              value: '${queue.length}',
+              caption: 'Staff submissions',
+            ),
+            second: StatTile(
+              icon: Icons.groups_outlined,
+              label: 'Team on-site',
+              value: '${team.where((m) => m.onShift).length} / ${team.length}',
+              caption: 'GPS verified',
+              iconColor: AppColors.teal,
+              iconBackground: AppColors.successSoft,
+            ),
           ),
         ),
         SectionHeader(
@@ -214,6 +238,7 @@ class _ReviewInspectPageState extends State<ReviewInspectPage> {
   ];
   final _ticked = <String>{};
   final _notes = TextEditingController();
+  var _media = const <String>[];
 
   @override
   void dispose() {
@@ -223,11 +248,20 @@ class _ReviewInspectPageState extends State<ReviewInspectPage> {
 
   void _confirm() {
     final note = _notes.text.trim();
+    final checks = [
+      for (final check in _checks)
+        if (_ticked.contains(check)) check,
+    ];
+    final media = _media;
     context.read<WorkOrdersBloc>().add(
       WorkOrderChanged(
         widget.id,
-        (order, now) =>
-            order.confirm(at: now, inspectionNote: note.isEmpty ? null : note),
+        (order, now) => order.confirm(
+          at: now,
+          inspectionNote: note.isEmpty ? null : note,
+          checks: checks,
+          media: media,
+        ),
       ),
     );
     _toast(context, '${widget.id} confirmed and closed');
@@ -357,7 +391,10 @@ class _ReviewInspectPageState extends State<ReviewInspectPage> {
                 controller: _notes,
                 maxLines: 3,
               ),
-              const MediaPickerField(label: 'Attach inspection photos'),
+              MediaPickerField(
+                label: 'Attach inspection photos',
+                onChanged: (media) => _media = media,
+              ),
               // Always shown, so ticking the last item doesn't make the page
               // jump.
               InfoBanner(
@@ -389,7 +426,7 @@ class _ReviewInspectPageState extends State<ReviewInspectPage> {
               OutlinedButton(
                 onPressed: () =>
                     context.push(AppRoutes.supervisorReassign(order.id)),
-                child: const Text('Reassign'),
+                child: Text(order.assignee == null ? 'Assign' : 'Reassign'),
               ),
               const SizedBox(height: 8),
             ],
@@ -446,7 +483,7 @@ class _ReturnWithEvidencePageState extends State<ReturnWithEvidencePage> {
   final _feedback = TextEditingController();
   var _reason = _reasons.first;
   var _media = const <String>[];
-  String? _returnTo;
+  TeamMember? _returnTo;
 
   @override
   void dispose() {
@@ -454,9 +491,10 @@ class _ReturnWithEvidencePageState extends State<ReturnWithEvidencePage> {
     super.dispose();
   }
 
-  void _submit(String defaultAssignee) {
+  void _submit(TeamMember? defaultAssignee) {
     if (!_form.currentState!.validate()) return;
     final assignee = _returnTo ?? defaultAssignee;
+    if (assignee == null) return;
     final reason = _reason;
     final feedback = _feedback.text.trim();
     final media = _media;
@@ -467,12 +505,13 @@ class _ReturnWithEvidencePageState extends State<ReturnWithEvidencePage> {
           reason: reason,
           feedback: feedback,
           media: media,
-          assignee: assignee,
+          assignee: assignee.name,
+          assigneeId: assignee.uid,
           at: now,
         ),
       ),
     );
-    _toast(context, 'Returned to $assignee · editing unlocked');
+    _toast(context, 'Returned to ${assignee.name} · editing unlocked');
     context.go(AppRoutes.supervisorReview);
   }
 
@@ -480,76 +519,84 @@ class _ReturnWithEvidencePageState extends State<ReturnWithEvidencePage> {
   Widget build(BuildContext context) {
     return WorkOrderScope(
       id: widget.id,
-      builder: (context, order) {
-        final text = Theme.of(context).textTheme;
-        final current = order.assignee ?? facilityWorkers.first.$1;
-        final names = [
-          current,
-          for (final worker in facilityWorkers)
-            if (worker.$1 != current) worker.$1,
-        ];
-        return DetailPage(
-          title: 'Return with evidence',
-          children: [
-            const InfoBanner(
-              'Return to staff for correction',
-              icon: Icons.undo,
-              tone: BannerTone.danger,
-            ),
-            Text('Show what needs attention', style: text.titleLarge),
-            const SizedBox(height: 6),
-            Text(
-              'Include clear feedback and visual evidence.',
-              style: text.bodyMedium,
-            ),
-            const SizedBox(height: 16),
-            Form(
-              key: _form,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  LabelledDropdown(
-                    label: 'Return reason',
-                    options: _reasons,
-                    onChanged: (value) => _reason = value,
-                  ),
-                  LabelledTextField(
-                    label: 'Supervisor feedback',
-                    hint: 'What needs to be corrected?',
-                    controller: _feedback,
-                    maxLines: 4,
-                    validator: (value) =>
-                        requiredText(value, 'Tell staff what to correct'),
-                  ),
-                  MediaPickerField(
-                    label: 'Add photographic proof',
-                    onChanged: (media) => _media = media,
-                  ),
-                  LabelledDropdown(
-                    label: 'Return to',
-                    options: names,
-                    onChanged: (value) => _returnTo = value,
-                  ),
-                  const InfoBanner(
-                    'The staff member will receive your comments and photos. '
-                    'This changes the work order to Returned and unlocks '
-                    'editing.',
-                    tone: BannerTone.neutral,
-                  ),
-                  OutlinedButton(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.danger,
-                      backgroundColor: AppColors.dangerSoft,
-                    ),
-                    onPressed: () => _submit(current),
-                    child: const Text('Return work order'),
-                  ),
-                ],
+      builder: (context, order) => TeamBuilder(
+        builder: (context, team) {
+          final text = Theme.of(context).textTheme;
+          // The current technician first, then the rest of the team.
+          final current =
+              team.where((m) => m.uid == order.assigneeId).firstOrNull ??
+              team.firstOrNull;
+          final people = [
+            ?current,
+            for (final member in team)
+              if (member != current) member,
+          ];
+          return DetailPage(
+            title: 'Return with evidence',
+            children: [
+              const InfoBanner(
+                'Return to staff for correction',
+                icon: Icons.undo,
+                tone: BannerTone.danger,
               ),
-            ),
-          ],
-        );
-      },
+              Text('Show what needs attention', style: text.titleLarge),
+              const SizedBox(height: 6),
+              Text(
+                'Include clear feedback and visual evidence.',
+                style: text.bodyMedium,
+              ),
+              const SizedBox(height: 16),
+              Form(
+                key: _form,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    LabelledDropdown(
+                      label: 'Return reason',
+                      options: _reasons,
+                      onChanged: (value) => _reason = value,
+                    ),
+                    LabelledTextField(
+                      label: 'Supervisor feedback',
+                      hint: 'What needs to be corrected?',
+                      controller: _feedback,
+                      maxLines: 4,
+                      validator: (value) =>
+                          requiredText(value, 'Tell staff what to correct'),
+                    ),
+                    MediaPickerField(
+                      label: 'Add photographic proof',
+                      onChanged: (media) => _media = media,
+                    ),
+                    if (people.isNotEmpty)
+                      LabelledDropdown(
+                        label: 'Return to',
+                        options: [for (final m in people) m.name],
+                        onChanged: (value) => _returnTo = people.firstWhere(
+                          (m) => m.name == value,
+                        ),
+                      ),
+                    const InfoBanner(
+                      'The staff member will receive your comments and photos. '
+                      'This changes the work order to Returned and unlocks '
+                      'editing.',
+                      tone: BannerTone.neutral,
+                    ),
+                    OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.danger,
+                        backgroundColor: AppColors.dangerSoft,
+                      ),
+                      onPressed: () => _submit(current),
+                      child: const Text('Return work order'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 }
@@ -573,19 +620,20 @@ class _ReassignTaskPageState extends State<ReassignTaskPage> {
     super.dispose();
   }
 
-  void _submit(String name) {
+  void _submit(TeamMember person) {
     final note = _note.text.trim();
     context.read<WorkOrdersBloc>().add(
       WorkOrderChanged(
         widget.id,
         (order, now) => order.reassign(
-          assignee: name,
+          assignee: person.name,
+          assigneeId: person.uid,
           at: now,
           note: note.isEmpty ? null : note,
         ),
       ),
     );
-    _toast(context, 'Reassigned to $name · notification sent');
+    _toast(context, 'Assigned to ${person.name} · notification sent');
     // Back to the work order, which now shows the new technician.
     if (context.canPop()) {
       context.pop();
@@ -598,69 +646,80 @@ class _ReassignTaskPageState extends State<ReassignTaskPage> {
   Widget build(BuildContext context) {
     return WorkOrderScope(
       id: widget.id,
-      builder: (context, order) {
-        final text = Theme.of(context).textTheme;
-        final others = facilityWorkers
-            .where((worker) => worker.$1 != order.assignee)
-            .toList();
-        final selected = _selected ?? others.first.$1;
-        return DetailPage(
-          title: 'Reassign task',
-          children: [
-            Text('Choose an available worker', style: text.titleLarge),
-            const SizedBox(height: 6),
-            Text('${order.id} · ${order.title}', style: text.bodyMedium),
-            const SizedBox(height: 12),
-            InfoBanner(
-              'Only workers assigned to '
-              '${context.profileOf(AppRole.supervisor).facility.split(',').first} '
-              'are shown.',
-              tone: BannerTone.neutral,
-            ),
-            RadioGroup<String>(
-              groupValue: selected,
-              onChanged: (value) => setState(() => _selected = value),
-              child: Column(
-                children: [
-                  for (final worker in others)
-                    AppCard(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 4,
-                      ),
-                      child: RadioListTile<String>(
-                        value: worker.$1,
-                        contentPadding: EdgeInsets.zero,
-                        controlAffinity: ListTileControlAffinity.trailing,
-                        // The avatar sits in its own slot so the name and the
-                        // role line up under each other.
-                        secondary: InitialsAvatar(worker.$2),
-                        title: Text(worker.$1, style: text.titleSmall),
-                        subtitle: Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text(
-                            '${worker.$3} · ${worker.$4}',
-                            style: text.bodySmall,
+      builder: (context, order) => TeamBuilder(
+        builder: (context, team) {
+          final text = Theme.of(context).textTheme;
+          final others = team.where((m) => m.uid != order.assigneeId).toList();
+          final selected =
+              others.where((m) => m.uid == _selected).firstOrNull ??
+              others.firstOrNull;
+          return DetailPage(
+            title: order.assignee == null ? 'Assign task' : 'Reassign task',
+            children: [
+              Text('Choose an available worker', style: text.titleLarge),
+              const SizedBox(height: 6),
+              Text('${order.id} · ${order.title}', style: text.bodyMedium),
+              const SizedBox(height: 12),
+              InfoBanner(
+                'Only workers assigned to '
+                '${context.profileOf(AppRole.supervisor).facility.split(',').first} '
+                'are shown.',
+                tone: BannerTone.neutral,
+              ),
+              if (others.isEmpty)
+                const EmptyListMessage('No one else is on this team yet.'),
+              RadioGroup<String>(
+                groupValue: selected?.uid,
+                onChanged: (value) => setState(() => _selected = value),
+                child: Column(
+                  children: [
+                    for (final worker in others)
+                      AppCard(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 4,
+                        ),
+                        child: RadioListTile<String>(
+                          value: worker.uid,
+                          contentPadding: EdgeInsets.zero,
+                          controlAffinity: ListTileControlAffinity.trailing,
+                          // The avatar sits in its own slot so the name and the
+                          // role line up under each other.
+                          secondary: InitialsAvatar(worker.initials),
+                          title: Text(worker.name, style: text.titleSmall),
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              [
+                                ?worker.designation,
+                                worker.onShift ? 'On site' : 'Off shift',
+                              ].join(' · '),
+                              style: text.bodySmall,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            LabelledTextField(
-              label: 'Assignment note',
-              hint: 'Anything the worker should know?',
-              controller: _note,
-              maxLines: 3,
-            ),
-            FilledButton(
-              onPressed: () => _submit(selected),
-              child: const Text('Reassign & notify'),
-            ),
-          ],
-        );
-      },
+              LabelledTextField(
+                label: 'Assignment note',
+                hint: 'Anything the worker should know?',
+                controller: _note,
+                maxLines: 3,
+              ),
+              FilledButton(
+                onPressed: selected == null ? null : () => _submit(selected),
+                child: Text(
+                  order.assignee == null
+                      ? 'Assign & notify'
+                      : 'Reassign & notify',
+                ),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 }

@@ -1,11 +1,96 @@
+import 'package:equatable/equatable.dart';
+
+import '../../profile/domain/user_profile.dart';
 import 'work_order.dart';
 
+/// Someone on a facility's team, for assigning work.
+class TeamMember extends Equatable {
+  const TeamMember({
+    required this.uid,
+    required this.name,
+    this.designation,
+    this.onShift = false,
+  });
+
+  final String uid;
+  final String name;
+  final String? designation;
+  final bool onShift;
+
+  String get initials => name
+      .trim()
+      .split(RegExp(r'\s+'))
+      .take(2)
+      .map((part) => part.isEmpty ? '' : part[0].toUpperCase())
+      .join();
+
+  @override
+  List<Object?> get props => [uid, name, designation, onShift];
+}
+
+/// An area inside a facility.
+class Zone extends Equatable {
+  const Zone(this.id, this.name);
+
+  final String id;
+  final String name;
+
+  @override
+  List<Object?> get props => [id, name];
+}
+
+/// What a client fills in to report an issue.
+class IssueDraft extends Equatable {
+  const IssueDraft({
+    required this.title,
+    required this.description,
+    required this.location,
+    required this.zone,
+    this.media = const [],
+  });
+
+  final String title;
+  final String description;
+  final Facility location;
+  final Zone zone;
+  final List<String> media;
+
+  @override
+  List<Object?> get props => [title, description, location, zone, media];
+}
+
+/// Why a work order action failed, in words the app can show.
+class WorkOrderFailure implements Exception {
+  const WorkOrderFailure(this.message, {this.code});
+
+  final String message;
+
+  /// `monthly-limit` when the client's company has used its requests for the
+  /// month, so the app can show the dedicated screen.
+  final String? code;
+
+  @override
+  String toString() => message;
+}
+
 abstract interface class WorkOrderRepository {
-  Future<List<WorkOrder>> getAll();
+  /// The orders [user] may see, kept up to date. Null means every order,
+  /// which only the sample data allows.
+  Stream<List<WorkOrder>> watch(UserProfile? user);
 
-  /// Inserts the order, or replaces the existing order with the same id.
-  Future<void> save(WorkOrder order);
+  /// The timeline of one order, oldest first.
+  Stream<List<WorkOrderEvent>> watchHistory(String id);
 
-  /// The next free work order reference, such as `WO-1049`.
-  Future<String> nextId();
+  /// Saves a lifecycle change. [before] is the order as it was and [after]
+  /// is the result of a [WorkOrder] transition such as `start` or `submit`.
+  Future<void> update(WorkOrder before, WorkOrder after);
+
+  /// Creates a client request and returns its reference, such as `WO-1049`.
+  Future<String> report(IssueDraft draft, UserProfile client);
+
+  /// The zones at a facility, by name.
+  Future<List<Zone>> zones(String locationId);
+
+  /// Staff at a facility, by name.
+  Stream<List<TeamMember>> watchTeam(String locationId);
 }

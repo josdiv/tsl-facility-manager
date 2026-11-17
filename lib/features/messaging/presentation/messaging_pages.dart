@@ -8,6 +8,7 @@ import '../../../core/session/app_role.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/page_frames.dart';
+import '../../profile/presentation/profile_cubit.dart';
 import '../../work_orders/data/sample_work_orders.dart';
 import '../../work_orders/domain/work_order.dart';
 import '../../work_orders/presentation/bloc/work_orders_bloc.dart';
@@ -67,12 +68,15 @@ class MessagesCubit extends Cubit<Map<String, List<ChatMessage>>> {
 }
 
 /// Which orders a role may hold a conversation about.
-List<WorkOrder> ordersForRole(WorkOrdersState state, AppRole role) =>
-    switch (role) {
-      AppRole.client => state.submittedBy(sampleClient),
-      AppRole.staff => state.assignedTo(sampleStaff),
-      AppRole.supervisor => state.orders,
-    };
+List<WorkOrder> ordersForRole(
+  WorkOrdersState state,
+  AppRole role,
+  String uid,
+) => switch (role) {
+  AppRole.client => state.submittedBy(uid),
+  AppRole.staff => state.assignedTo(uid),
+  AppRole.supervisor => state.orders,
+};
 
 /// Gap in the design: chats belong to a work order, so each role needs a list.
 class ConversationsPage extends StatelessWidget {
@@ -87,6 +91,7 @@ class ConversationsPage extends StatelessWidget {
         ordersForRole(
             context.watch<WorkOrdersBloc>().state,
             role,
+            context.profileOf(role).uid,
           ).where((order) => threads[order.id]?.isNotEmpty ?? false).toList()
           // Latest conversation first. Times are same-day "HH:mm" in sample data.
           ..sort(

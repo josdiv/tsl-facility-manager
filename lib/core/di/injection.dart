@@ -8,6 +8,7 @@ import '../../features/auth/presentation/session_cubit.dart';
 import '../../features/messaging/presentation/messaging_pages.dart';
 import '../../features/parts/presentation/requisitions_cubit.dart';
 import '../../features/profile/presentation/profile_cubit.dart';
+import '../../features/work_orders/data/firestore_work_order_repository.dart';
 import '../../features/work_orders/data/in_memory_work_order_repository.dart';
 import '../../features/work_orders/domain/work_order_repository.dart';
 import '../../features/work_orders/presentation/bloc/work_orders_bloc.dart';
@@ -27,9 +28,17 @@ void configureDependencies({bool useFirebase = false}) {
       dispose: (cubit) => cubit.close(),
     )
     ..registerLazySingleton<WorkOrderRepository>(
-      InMemoryWorkOrderRepository.new,
+      useFirebase
+          ? FirestoreWorkOrderRepository.new
+          : InMemoryWorkOrderRepository.new,
     )
-    ..registerFactory(() => WorkOrdersBloc(sl()))
+    ..registerFactory(
+      () => WorkOrdersBloc(
+        sl(),
+        // With Firebase, follow whoever is signed in.
+        scope: useFirebase ? sl<AuthRepository>().watchUser() : null,
+      ),
+    )
     ..registerFactory(AttendanceCubit.new)
     ..registerFactory(MessagesCubit.new)
     ..registerFactory(

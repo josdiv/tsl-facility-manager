@@ -5,9 +5,30 @@ const sampleStaff = 'Emeka Okafor';
 const sampleSupervisor = 'Sarah James';
 const _marina = 'Marina Towers, Lagos';
 
+/// Account IDs for the sample people, matching the profiles and the
+/// emulator seed data.
+const samplePeopleIds = {
+  sampleClient: 'daniel',
+  sampleStaff: 'emeka',
+  sampleSupervisor: 'sarah',
+  'Tunde Bakare': 'tunde',
+  'David Adeyemi': 'david',
+  'Grace Eze': 'grace',
+};
+
 /// Sample orders from the prototype. Due times are relative to [now] so the
 /// overdue flag behaves the same whenever the app is opened.
-List<WorkOrder> sampleWorkOrders(DateTime now) {
+List<WorkOrder> sampleWorkOrders(DateTime now) => _orders(now)
+    .map(
+      (o) => o.withIds(
+        submittedById: samplePeopleIds[o.submittedBy],
+        assigneeId: samplePeopleIds[o.assignee],
+        locationId: 'marina',
+      ),
+    )
+    .toList();
+
+List<WorkOrder> _orders(DateTime now) {
   DateTime hours(int value) => now.add(Duration(hours: value));
 
   return [

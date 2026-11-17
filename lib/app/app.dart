@@ -13,6 +13,7 @@ import '../features/auth/presentation/session_cubit.dart';
 import '../features/messaging/presentation/messaging_pages.dart';
 import '../features/parts/presentation/requisitions_cubit.dart';
 import '../features/profile/presentation/profile_cubit.dart';
+import '../features/work_orders/domain/work_order_repository.dart';
 import '../features/work_orders/presentation/bloc/work_orders_bloc.dart';
 
 class TslFacilityManagerApp extends StatefulWidget {
@@ -38,8 +39,13 @@ class _TslFacilityManagerAppState extends State<TslFacilityManagerApp> {
 
   @override
   Widget build(BuildContext context) {
-    return RepositoryProvider<AuthRepository>.value(
-      value: sl<AuthRepository>(),
+    return MultiRepositoryProvider(
+      providers: [
+        RepositoryProvider<AuthRepository>.value(value: sl<AuthRepository>()),
+        RepositoryProvider<WorkOrderRepository>.value(
+          value: sl<WorkOrderRepository>(),
+        ),
+      ],
       child: _providers(),
     );
   }

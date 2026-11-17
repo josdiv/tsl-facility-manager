@@ -1,11 +1,11 @@
+import '../../../core/session/app_role.dart';
+import '../../auth/domain/auth_repository.dart';
+import '../domain/user_profile.dart';
+
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-
-import '../../../core/session/app_role.dart';
-import '../../auth/domain/auth_repository.dart';
-import '../domain/user_profile.dart';
 
 /// Each role's profile.
 ///

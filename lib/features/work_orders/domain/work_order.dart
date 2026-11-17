@@ -51,6 +51,10 @@ class WorkOrder extends Equatable {
     required this.due,
     required this.submittedBy,
     this.assignee,
+    this.submittedById,
+    this.assigneeId,
+    this.locationId,
+    this.zoneId,
     this.isHighPriority = false,
     this.reportMedia = const [],
     this.workNote,
@@ -60,6 +64,8 @@ class WorkOrder extends Equatable {
     this.returnFeedback,
     this.returnMedia = const [],
     this.inspectionNote,
+    this.inspectionChecks = const [],
+    this.inspectionMedia = const [],
     this.assignmentNote,
     this.history = const [],
   });
@@ -74,6 +80,13 @@ class WorkOrder extends Equatable {
   final DateTime due;
   final String submittedBy;
   final String? assignee;
+
+  /// Account IDs behind [submittedBy] and [assignee]. Null for SLA work, which
+  /// no client submits.
+  final String? submittedById;
+  final String? assigneeId;
+  final String? locationId;
+  final String? zoneId;
   final bool isHighPriority;
   final List<String> reportMedia;
   final String? workNote;
@@ -83,6 +96,8 @@ class WorkOrder extends Equatable {
   final String? returnFeedback;
   final List<String> returnMedia;
   final String? inspectionNote;
+  final List<String> inspectionChecks;
+  final List<String> inspectionMedia;
 
   /// The supervisor's note to the technician from the last reassignment.
   final String? assignmentNote;
@@ -127,11 +142,18 @@ class WorkOrder extends Equatable {
     );
   }
 
-  WorkOrder confirm({required DateTime at, String? inspectionNote}) {
+  WorkOrder confirm({
+    required DateTime at,
+    String? inspectionNote,
+    List<String> checks = const [],
+    List<String> media = const [],
+  }) {
     _require(isAwaitingReview, 'confirm');
     return _copy(
       status: WorkOrderStatus.completed,
       inspectionNote: inspectionNote,
+      inspectionChecks: checks,
+      inspectionMedia: media,
       history: [
         ...history,
         WorkOrderEvent('Supervisor confirmed the work', at),
@@ -145,6 +167,7 @@ class WorkOrder extends Equatable {
     required List<String> media,
     required String assignee,
     required DateTime at,
+    String? assigneeId,
   }) {
     _require(isAwaitingReview, 'return');
     return _copy(
@@ -153,6 +176,7 @@ class WorkOrder extends Equatable {
       returnFeedback: feedback,
       returnMedia: media,
       assignee: assignee,
+      assigneeId: assigneeId,
       history: [...history, WorkOrderEvent('Returned for correction', at)],
     );
   }
@@ -160,11 +184,13 @@ class WorkOrder extends Equatable {
   WorkOrder reassign({
     required String assignee,
     required DateTime at,
+    String? assigneeId,
     String? note,
   }) {
     _require(status != WorkOrderStatus.completed, 'reassign');
     return _copy(
       assignee: assignee,
+      assigneeId: assigneeId,
       assignmentNote: note,
       clearAssignmentNote: note == null,
       history: [
@@ -180,9 +206,32 @@ class WorkOrder extends Equatable {
     }
   }
 
+  /// The same order with the given IDs filled in.
+  WorkOrder withIds({
+    String? submittedById,
+    String? assigneeId,
+    String? locationId,
+    String? zoneId,
+  }) => _copy(
+    submittedById: submittedById,
+    assigneeId: assigneeId,
+    locationId: locationId,
+    zoneId: zoneId,
+  );
+
+  /// The same order with its timeline replaced.
+  WorkOrder withHistory(List<WorkOrderEvent> history) =>
+      _copy(history: history);
+
   WorkOrder _copy({
     WorkOrderStatus? status,
     String? assignee,
+    String? assigneeId,
+    String? submittedById,
+    String? locationId,
+    String? zoneId,
+    List<String>? inspectionChecks,
+    List<String>? inspectionMedia,
     String? workNote,
     List<String>? workMedia,
     DateTime? submittedAt,
@@ -205,6 +254,10 @@ class WorkOrder extends Equatable {
       due: due,
       submittedBy: submittedBy,
       assignee: assignee ?? this.assignee,
+      submittedById: submittedById ?? this.submittedById,
+      assigneeId: assigneeId ?? this.assigneeId,
+      locationId: locationId ?? this.locationId,
+      zoneId: zoneId ?? this.zoneId,
       isHighPriority: isHighPriority,
       reportMedia: reportMedia,
       workNote: workNote ?? this.workNote,
@@ -214,6 +267,8 @@ class WorkOrder extends Equatable {
       returnFeedback: returnFeedback ?? this.returnFeedback,
       returnMedia: returnMedia ?? this.returnMedia,
       inspectionNote: inspectionNote ?? this.inspectionNote,
+      inspectionChecks: inspectionChecks ?? this.inspectionChecks,
+      inspectionMedia: inspectionMedia ?? this.inspectionMedia,
       assignmentNote: clearAssignmentNote
           ? null
           : assignmentNote ?? this.assignmentNote,
@@ -233,6 +288,10 @@ class WorkOrder extends Equatable {
     due,
     submittedBy,
     assignee,
+    submittedById,
+    assigneeId,
+    locationId,
+    zoneId,
     isHighPriority,
     reportMedia,
     workNote,
@@ -242,6 +301,8 @@ class WorkOrder extends Equatable {
     returnFeedback,
     returnMedia,
     inspectionNote,
+    inspectionChecks,
+    inspectionMedia,
     assignmentNote,
     history,
   ];

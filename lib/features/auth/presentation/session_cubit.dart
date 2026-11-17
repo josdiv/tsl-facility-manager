@@ -1,10 +1,10 @@
+import '../../profile/domain/user_profile.dart';
+import '../domain/auth_repository.dart';
+
 import 'dart:async';
 
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-
-import '../../profile/domain/user_profile.dart';
-import '../domain/auth_repository.dart';
 
 enum SessionStatus {
   /// Sample data: no sign-in is enforced.

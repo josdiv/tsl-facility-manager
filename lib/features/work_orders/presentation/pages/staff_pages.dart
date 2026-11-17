@@ -3,7 +3,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/router/app_routes.dart';
-import '../../../profile/presentation/profile_cubit.dart';
 import '../../../../core/session/app_role.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/utils/date_labels.dart';
@@ -19,6 +18,7 @@ import '../../../../core/widgets/page_frames.dart';
 import '../../../../core/widgets/section_header.dart';
 import '../../../../core/widgets/stat_tile.dart';
 import '../../../attendance/presentation/attendance_page.dart';
+import '../../../profile/presentation/profile_cubit.dart';
 import '../../data/sample_work_orders.dart';
 import '../../domain/work_order.dart';
 import '../bloc/work_orders_bloc.dart';
@@ -30,8 +30,9 @@ class StaffHomePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final uid = context.profileOf(AppRole.staff).uid;
     final orders = context.select<WorkOrdersBloc, List<WorkOrder>>(
-      (bloc) => bloc.state.assignedTo(sampleStaff),
+      (bloc) => bloc.state.assignedTo(uid),
     );
     final clockedIn = context.select<AttendanceCubit, bool>(
       (cubit) => cubit.state.contains(AppRole.staff),
@@ -122,8 +123,9 @@ class AssignedTasksPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final uid = context.profileOf(AppRole.staff).uid;
     final orders = context.select<WorkOrdersBloc, List<WorkOrder>>(
-      (bloc) => bloc.state.assignedTo(sampleStaff),
+      (bloc) => bloc.state.assignedTo(uid),
     );
     final endOfToday = DateUtils.dateOnly(DateTime.now())
         .add(const Duration(days: 1));
