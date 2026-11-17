@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Firebase needs the network in release builds too. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="TSL Facility Manager"
         android:name="${applicationName}"

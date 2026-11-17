@@ -49,3 +49,9 @@ app.*.map.json
 
 # Gradle output from the Android project root (AGP 9)
 /android/build/
+
+# Local Firebase emulator data
+/.emulator-data/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log

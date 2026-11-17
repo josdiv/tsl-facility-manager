@@ -3,12 +3,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import 'core/di/injection.dart';
+import 'core/firebase/firebase_env.dart';
 import 'firebase_options.dart';
 
 typedef FirebaseInitializer = Future<void> Function();
 
 Future<void> initializeFirebase() async {
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await connectEmulatorsIfEnabled();
 }
 
 /// Prepares everything the app needs before the first frame. Firebase starts
