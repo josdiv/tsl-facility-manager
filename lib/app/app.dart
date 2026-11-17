@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
@@ -6,12 +8,14 @@ import '../core/constants/app_constants.dart';
 import '../core/di/injection.dart';
 import '../core/router/app_router.dart';
 import '../core/router/app_routes.dart';
+import '../core/session/app_role.dart';
 import '../core/theme/app_theme.dart';
 import '../features/attendance/domain/attendance.dart';
 import '../features/attendance/presentation/attendance_cubit.dart';
 import '../features/auth/domain/auth_repository.dart';
 import '../features/auth/presentation/session_cubit.dart';
 import '../features/messaging/domain/chat.dart';
+import '../features/notifications/domain/notifications.dart';
 import '../features/parts/presentation/requisitions_cubit.dart';
 import '../features/profile/presentation/profile_cubit.dart';
 import '../features/work_orders/domain/work_order_repository.dart';
@@ -32,8 +36,24 @@ class _TslFacilityManagerAppState extends State<TslFacilityManagerApp> {
     session: sl<SessionCubit>(),
   );
 
+  StreamSubscription<void>? _pushTaps;
+
+  @override
+  void initState() {
+    super.initState();
+    // A tapped push opens the signed-in person's notifications.
+    _pushTaps = sl<PushService>().onTapped.listen((_) {
+      final user = sl<SessionCubit>().state.user;
+      if (user == null) return;
+      final route = AppRoutes.notifications(user.role);
+      // The supervisor's alerts are a tab; the others are pushed screens.
+      user.role == AppRole.supervisor ? _router.go(route) : _router.push(route);
+    });
+  }
+
   @override
   void dispose() {
+    _pushTaps?.cancel();
     _router.dispose();
     super.dispose();
   }
@@ -51,6 +71,9 @@ class _TslFacilityManagerAppState extends State<TslFacilityManagerApp> {
           value: sl<AttendanceRepository>(),
         ),
         RepositoryProvider<LocationService>.value(value: sl<LocationService>()),
+        RepositoryProvider<NotificationRepository>.value(
+          value: sl<NotificationRepository>(),
+        ),
       ],
       child: _providers(),
     );

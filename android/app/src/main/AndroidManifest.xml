@@ -4,6 +4,8 @@
     <!-- GPS clock-in checks the person is inside their facility. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <!-- Android 13+ asks before showing notifications. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
         android:label="TSL Facility Manager"
         android:name="${applicationName}"

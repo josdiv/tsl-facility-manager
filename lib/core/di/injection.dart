@@ -12,6 +12,10 @@ import '../../features/auth/presentation/session_cubit.dart';
 import '../../features/messaging/data/firestore_chat_repository.dart';
 import '../../features/messaging/data/in_memory_chat_repository.dart';
 import '../../features/messaging/domain/chat.dart';
+import '../../features/notifications/data/fcm_push_service.dart';
+import '../../features/notifications/data/firestore_notification_repository.dart';
+import '../../features/notifications/data/sample_notifications.dart';
+import '../../features/notifications/domain/notifications.dart';
 import '../../features/parts/presentation/requisitions_cubit.dart';
 import '../../features/profile/presentation/profile_cubit.dart';
 import '../../features/work_orders/data/firestore_work_order_repository.dart';
@@ -41,7 +45,11 @@ void configureDependencies({bool useFirebase = false}) {
       )
       ..registerLazySingleton<LocationService>(
         () => const GeolocatorLocationService(),
-      );
+      )
+      ..registerLazySingleton<NotificationRepository>(
+        FirestoreNotificationRepository.new,
+      )
+      ..registerLazySingleton<PushService>(FcmPushService.new);
   } else {
     sl
       ..registerLazySingleton(InMemoryWorkOrderRepository.new)
@@ -58,7 +66,11 @@ void configureDependencies({bool useFirebase = false}) {
       )
       ..registerLazySingleton<LocationService>(
         () => const SampleLocationService(),
-      );
+      )
+      ..registerLazySingleton<NotificationRepository>(
+        InMemoryNotificationRepository.new,
+      )
+      ..registerLazySingleton<PushService>(() => const NoPushService());
   }
 
   sl
@@ -66,7 +78,7 @@ void configureDependencies({bool useFirebase = false}) {
       useFirebase ? FirebaseAuthRepository.new : SampleAuthRepository.new,
     )
     ..registerLazySingleton(
-      () => SessionCubit(sl(), enforced: useFirebase),
+      () => SessionCubit(sl(), enforced: useFirebase, push: sl()),
       dispose: (cubit) => cubit.close(),
     )
     ..registerFactory(

@@ -81,7 +81,8 @@ Written by Cloud Functions. The user can only set `readAt`.
 | `kind` | enum | `assigned`, `returned`, `sla_due`, `submitted`, `completed`, `message`, `requisition`, `system` |
 | `title` | string | For example `Task returned for correction` |
 | `body` | string | For example `WO-1048 · Incomplete finishing` |
-| `workOrderId` | string \| null | Opens this work order when tapped |
+| `workOrderId` | string \| null | The work order's document ID |
+| `workOrderRef` | string \| null | Its reference, such as `WO-1048`. The app opens it when tapped |
 | `requisitionId` | string \| null | |
 | `createdAt` | timestamp | |
 | `readAt` | timestamp \| null | Set by the user |

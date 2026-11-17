@@ -59,10 +59,24 @@ export async function sendPush(tokens: string[], title: string, body: string): P
         form.append('token', token);
         form.append('message', `${title}\n${body}`);
         const res = await fetch(PUSH_API_URL, { method: 'POST', body: form, signal: AbortSignal.timeout(15000) });
-        if (!res.ok) logger.warn(`push API returned ${res.status}: ${(await res.text()).slice(0, 200)}`);
+        const text = await res.text().catch(() => '');
+        // Like the mail API, it can answer HTTP 200 while Firebase refused the
+        // push (e.g. "SenderId mismatch" when it sends with another project's
+        // credentials), so read the body too.
+        const failure = pushFailure(res.status, text);
+        if (failure) logger.warn(`push not delivered: ${failure}`);
       } catch (error) {
         logger.warn(`push API request failed: ${(error as Error).message}`);
       }
     }),
   );
+}
+
+/** Why the push API didn't deliver, or null when it seems to have worked. */
+export function pushFailure(status: number, text: string): string | null {
+  if (status < 200 || status >= 300) return `HTTP ${status}: ${text.slice(0, 200)}`;
+  const code = /\[errorCode\] => (\w+)|"errorCode"\s*:\s*"(\w+)"/.exec(text);
+  if (code) return code[1] ?? code[2];
+  if (/\[error\]|"error"\s*:/.test(text)) return text.replace(/\s+/g, ' ').slice(0, 200);
+  return null;
 }

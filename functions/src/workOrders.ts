@@ -1,6 +1,7 @@
 import { Timestamp } from 'firebase-admin/firestore';
 import { onDocumentCreated, onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
+import { notify, supervisorsOf } from './notify';
 import {
   DATABASE_ID,
   db,
@@ -153,6 +154,9 @@ export const onWorkOrderWrite = onDocumentWritten(
     };
     const events = db.collection(`workOrders/${event.params.id}/events`);
 
+    const id = event.params.id;
+    const about = { workOrderId: id, workOrderRef: after.ref as string };
+
     if (!before) {
       await events.add({
         ...base,
@@ -160,6 +164,14 @@ export const onWorkOrderWrite = onDocumentWritten(
         note: after.type === 'sla' ? 'Scheduled by SLA plan' : null,
         photos: after.reportPhotos ?? [],
       });
+      if (after.type === 'client') {
+        await notify(await supervisorsOf(after), {
+          kind: 'system',
+          title: 'New request',
+          body: `${after.ref} ${after.title} · ${after.zoneName ?? after.locationName}`,
+          ...about,
+        });
+      }
       return;
     }
     if (before.status !== after.status && EVENT_FOR_STATUS[after.status]) {
@@ -192,6 +204,55 @@ export const onWorkOrderWrite = onDocumentWritten(
         note: [`Assigned to ${after.assignedToName}`, after.assignmentNote].filter(Boolean).join(' · '),
         photos: [],
       });
+      await notify([after.assignedToId], {
+        kind: 'assigned',
+        title: 'New assignment',
+        body: [`${after.ref} ${after.title} was assigned to you`, after.assignmentNote].filter(Boolean).join(' · '),
+        ...about,
+      }, actorId);
+      if (!before.assignedToId) {
+        await notify([after.clientId], {
+          kind: 'assigned',
+          title: 'Technician assigned',
+          body: `${after.assignedToName} is working on ${after.ref}`,
+          ...about,
+        });
+      }
+    }
+
+    if (before.status !== after.status) {
+      switch (after.status) {
+        case 'pending_review':
+          await notify(await supervisorsOf(after), {
+            kind: 'submitted',
+            title: 'Work ready for review',
+            body: `${base.actorName} submitted ${after.ref} ${after.title}`,
+            ...about,
+          }, actorId);
+          break;
+        case 'returned':
+          await notify([after.assignedToId], {
+            kind: 'returned',
+            title: 'Task returned for correction',
+            body: `${after.ref} · ${after.returnFeedback ?? after.title}`,
+            ...about,
+          }, actorId);
+          break;
+        case 'completed':
+          await notify([after.clientId], {
+            kind: 'completed',
+            title: 'Request resolved',
+            body: `${after.ref} ${after.title} is complete`,
+            ...about,
+          });
+          await notify([after.assignedToId], {
+            kind: 'completed',
+            title: 'Work confirmed',
+            body: `${base.actorName} confirmed ${after.ref} ${after.title}`,
+            ...about,
+          }, actorId);
+          break;
+      }
     }
   },
 );
@@ -202,10 +263,24 @@ export const onWorkOrderMessage = onDocumentCreated(
   async (event) => {
     const message = event.data?.data();
     if (!message) return;
-    await db.doc(`workOrders/${event.params.id}`).update({
+    const ref = db.doc(`workOrders/${event.params.id}`);
+    await ref.update({
       lastMessageAt: message.sentAt ?? serverTime(),
       lastMessagePreview: String(message.text).slice(0, 120),
     });
+    const order = (await ref.get()).data();
+    if (!order) return;
+    await notify(
+      [order.clientId, order.assignedToId, order.supervisorId],
+      {
+        kind: 'message',
+        title: `New message on ${order.ref}`,
+        body: `${message.senderName}: ${String(message.text).slice(0, 120)}`,
+        workOrderId: event.params.id,
+        workOrderRef: order.ref,
+      },
+      message.senderId,
+    );
   },
 );
 
