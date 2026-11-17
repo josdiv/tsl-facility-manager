@@ -2,18 +2,19 @@ rules_version = '2';
 
 // TSL Facility Manager Cloud Storage rules. Paths and limits are described in
 // docs/firestore-schema.md ("Cloud Storage layout"). Access follows the
-// matching Firestore documents, so these rules read Firestore.
+// matching Firestore documents in the app's tsl-app database, so these rules
+// read Firestore.
 
 service firebase.storage {
   match /b/{bucket}/o {
 
     function me() {
-      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+      return firestore.get(/databases/tsl-app/documents/users/$(request.auth.uid)).data;
     }
 
     function active() {
       return request.auth != null
-        && firestore.exists(/databases/(default)/documents/users/$(request.auth.uid))
+        && firestore.exists(/databases/tsl-app/documents/users/$(request.auth.uid))
         && me().status == 'active';
     }
 
@@ -31,11 +32,11 @@ service firebase.storage {
 
     match /workOrders/{workOrderId}/{kind}/{fileName} {
       function order() {
-        return firestore.get(/databases/(default)/documents/workOrders/$(workOrderId)).data;
+        return firestore.get(/databases/tsl-app/documents/workOrders/$(workOrderId)).data;
       }
 
       function orderExists() {
-        return firestore.exists(/databases/(default)/documents/workOrders/$(workOrderId));
+        return firestore.exists(/databases/tsl-app/documents/workOrders/$(workOrderId));
       }
 
       allow read: if active()
@@ -69,7 +70,7 @@ service firebase.storage {
       allow read: if active() && (
         me().role == 'admin'
         || (me().role in ['staff', 'supervisor']
-            && firestore.get(/databases/(default)/documents/documents/$(documentId)).data.locationId == me().locationId)
+            && firestore.get(/databases/tsl-app/documents/documents/$(documentId)).data.locationId == me().locationId)
       );
       allow write: if active() && me().role == 'admin'
         && (request.resource == null || request.resource.size < 25 * 1024 * 1024);

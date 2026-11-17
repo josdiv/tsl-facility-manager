@@ -1,5 +1,7 @@
 import 'package:get_it/get_it.dart';
 
+import '../media/photo_service.dart';
+
 import '../../features/attendance/data/firebase_attendance_repository.dart';
 import '../../features/attendance/data/geolocator_location_service.dart';
 import '../../features/attendance/data/sample_attendance.dart';
@@ -31,7 +33,8 @@ final GetIt sl = GetIt.instance;
 void configureDependencies({bool useFirebase = false}) {
   if (useFirebase) {
     sl
-      ..registerLazySingleton(FirestoreWorkOrderRepository.new)
+      ..registerLazySingleton<PhotoService>(FirebasePhotoService.new)
+      ..registerLazySingleton(() => FirestoreWorkOrderRepository(photos: sl()))
       ..registerLazySingleton<WorkOrderRepository>(
         sl<FirestoreWorkOrderRepository>,
       )
@@ -52,6 +55,7 @@ void configureDependencies({bool useFirebase = false}) {
       ..registerLazySingleton<PushService>(FcmPushService.new);
   } else {
     sl
+      ..registerLazySingleton<PhotoService>(SamplePhotoService.new)
       ..registerLazySingleton(InMemoryWorkOrderRepository.new)
       ..registerLazySingleton<WorkOrderRepository>(
         sl<InMemoryWorkOrderRepository>,

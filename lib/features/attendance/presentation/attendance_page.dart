@@ -161,7 +161,11 @@ class _LiveAttendanceState extends State<_LiveAttendance> {
         : distance == null
         ? 'Unavailable'
         : '${distanceLabel(distance)} · '
-              '${verdict == GpsVerdict.inside ? 'Inside zone' : 'Outside zone'}';
+              '${switch (verdict) {
+                GpsVerdict.inside => 'Inside zone',
+                GpsVerdict.outside => 'Outside zone',
+                _ => 'Uncertain',
+              }}';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -197,11 +201,11 @@ class _LiveAttendanceState extends State<_LiveAttendance> {
               KeyValueRow(
                 'Your distance',
                 distanceText,
-                valueColor: verdict == GpsVerdict.inside
-                    ? AppColors.success
-                    : verdict == null
-                    ? null
-                    : AppColors.danger,
+                valueColor: switch (verdict) {
+                  GpsVerdict.inside => AppColors.success,
+                  GpsVerdict.outside || GpsVerdict.mocked => AppColors.danger,
+                  _ => AppColors.warning,
+                },
               ),
               KeyValueRow(
                 'GPS accuracy',

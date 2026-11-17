@@ -1,43 +1,120 @@
-import 'package:flutter/material.dart';
+import 'dart:io';
 
+import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+
+import '../media/photo_service.dart';
 import '../theme/app_colors.dart';
 
-/// Placeholder tile for an attached image.
-class MediaThumb extends StatelessWidget {
-  const MediaThumb(this.name, {this.onRemove, super.key});
+PhotoService? _photos(BuildContext context) {
+  try {
+    return context.read<PhotoService>();
+  } on ProviderNotFoundException {
+    return null;
+  }
+}
 
-  final String name;
+/// The picture for [photo]: a local file, a stored photo, or a placeholder
+/// showing the name (sample data, or a photo that can't load).
+class _PhotoImage extends StatelessWidget {
+  const _PhotoImage(this.photo, {this.fit = BoxFit.cover});
+
+  final String photo;
+  final BoxFit fit;
+
+  @override
+  Widget build(BuildContext context) {
+    if (isLocalPhoto(photo)) {
+      return Image.file(
+        File(photo),
+        fit: fit,
+        errorBuilder: (_, _, _) => _Placeholder(photo),
+      );
+    }
+    final photos = _photos(context);
+    if (!isStoredPhoto(photo) || photos == null) return _Placeholder(photo);
+    return FutureBuilder<String?>(
+      future: photos.downloadUrl(photo),
+      builder: (context, snapshot) {
+        final url = snapshot.data;
+        if (url == null) {
+          return snapshot.connectionState == ConnectionState.done
+              ? _Placeholder(photo)
+              : const Center(
+                  child: SizedBox.square(
+                    dimension: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                );
+        }
+        return Image.network(
+          url,
+          fit: fit,
+          errorBuilder: (_, _, _) => _Placeholder(photo),
+        );
+      },
+    );
+  }
+}
+
+class _Placeholder extends StatelessWidget {
+  const _Placeholder(this.photo);
+
+  final String photo;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFD5DFDF), Color(0xFFE6E3EC)],
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          const Icon(Icons.image_outlined, size: 20, color: AppColors.body),
+          const SizedBox(height: 4),
+          Text(
+            photoName(photo),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 12, color: AppColors.ink),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One attached image. Tapping it opens it full screen.
+class MediaThumb extends StatelessWidget {
+  const MediaThumb(this.photo, {this.onRemove, super.key});
+
+  final String photo;
   final VoidCallback? onRemove;
 
   @override
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        Container(
-          height: 92,
-          width: double.infinity,
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFFD5DFDF), Color(0xFFE6E3EC)],
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              Icon(Icons.image_outlined, size: 20, color: AppColors.body),
-              const SizedBox(height: 4),
-              Text(
-                name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 12, color: AppColors.ink),
+        Semantics(
+          button: true,
+          label: 'Open photo ${photoName(photo)}',
+          child: GestureDetector(
+            onTap: () => showPhoto(context, photo),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: SizedBox(
+                height: 92,
+                width: double.infinity,
+                child: _PhotoImage(photo),
               ),
-            ],
+            ),
           ),
         ),
         if (onRemove != null)
@@ -45,7 +122,7 @@ class MediaThumb extends StatelessWidget {
             top: 0,
             right: 0,
             child: IconButton(
-              tooltip: 'Remove $name',
+              tooltip: 'Remove ${photoName(photo)}',
               onPressed: onRemove,
               icon: const Icon(Icons.cancel, size: 20, color: AppColors.body),
             ),
@@ -55,11 +132,39 @@ class MediaThumb extends StatelessWidget {
   }
 }
 
-/// Two-column grid of media tiles.
-class MediaGrid extends StatelessWidget {
-  const MediaGrid(this.names, {this.onRemove, super.key});
+/// Shows [photo] full screen, with pinch to zoom.
+Future<void> showPhoto(BuildContext context, String photo) {
+  return Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      fullscreenDialog: true,
+      builder: (context) => Scaffold(
+        backgroundColor: Colors.black,
+        appBar: AppBar(
+          backgroundColor: Colors.black,
+          foregroundColor: Colors.white,
+          titleTextStyle: const TextStyle(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+          title: const Text('Photo'),
+        ),
+        body: Center(
+          child: InteractiveViewer(
+            maxScale: 5,
+            child: _PhotoImage(photo, fit: BoxFit.contain),
+          ),
+        ),
+      ),
+    ),
+  );
+}
 
-  final List<String> names;
+/// Two-column grid of images.
+class MediaGrid extends StatelessWidget {
+  const MediaGrid(this.photos, {this.onRemove, super.key});
+
+  final List<String> photos;
   final ValueChanged<String>? onRemove;
 
   @override
@@ -72,12 +177,12 @@ class MediaGrid extends StatelessWidget {
           spacing: 10,
           runSpacing: 10,
           children: [
-            for (final name in names)
+            for (final photo in photos)
               SizedBox(
                 width: width,
                 child: MediaThumb(
-                  name,
-                  onRemove: removal == null ? null : () => removal(name),
+                  photo,
+                  onRemove: removal == null ? null : () => removal(photo),
                 ),
               ),
           ],
@@ -87,18 +192,21 @@ class MediaGrid extends StatelessWidget {
   }
 }
 
-/// Dashed drop zone. In the UI phase, tapping it adds a sample attachment
-/// instead of opening the device gallery or camera.
+/// Dashed drop zone that adds photos from the camera or the gallery.
 class MediaPickerField extends StatefulWidget {
   const MediaPickerField({
     required this.label,
     this.initial = const [],
+    this.max = 4,
     this.onChanged,
     super.key,
   });
 
   final String label;
   final List<String> initial;
+
+  /// Most photos allowed, matching firestore.rules.
+  final int max;
   final ValueChanged<List<String>>? onChanged;
 
   @override
@@ -107,18 +215,65 @@ class MediaPickerField extends StatefulWidget {
 
 class _MediaPickerFieldState extends State<MediaPickerField> {
   late final List<String> _media = [...widget.initial];
-  var _added = 0;
 
-  void _add() {
-    setState(() {
-      _added++;
-      _media.add('Photo-$_added.jpg');
-    });
-    widget.onChanged?.call(List.unmodifiable(_media));
+  Future<void> _add() async {
+    final photos = _photos(context);
+    if (photos == null) return;
+    final room = widget.max - _media.length;
+    if (room <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('You can add up to ${widget.max} photos.')),
+      );
+      return;
+    }
+    final source = photos.asksForSource
+        ? await _chooseSource()
+        : PhotoSource.gallery;
+    if (source == null) return;
+    try {
+      final picked = await photos.pick(source, max: room);
+      if (picked.isEmpty || !mounted) return;
+      setState(() => _media.addAll(picked.take(room)));
+      widget.onChanged?.call(List.unmodifiable(_media));
+    } on Object {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            source == PhotoSource.camera
+                ? 'The camera couldn’t open. Check the app’s camera permission.'
+                : 'Your photos couldn’t open. Check the app’s photo permission.',
+          ),
+        ),
+      );
+    }
   }
 
-  void _remove(String name) {
-    setState(() => _media.remove(name));
+  Future<PhotoSource?> _chooseSource() => showModalBottomSheet<PhotoSource>(
+    context: context,
+    showDragHandle: true,
+    builder: (context) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.photo_camera_outlined),
+            title: const Text('Take a photo'),
+            onTap: () => Navigator.pop(context, PhotoSource.camera),
+          ),
+          ListTile(
+            leading: const Icon(Icons.photo_library_outlined),
+            title: const Text('Choose from gallery'),
+            onTap: () => Navigator.pop(context, PhotoSource.gallery),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    ),
+  );
+
+  void _remove(String photo) {
+    setState(() => _media.remove(photo));
     widget.onChanged?.call(List.unmodifiable(_media));
   }
 
@@ -160,7 +315,7 @@ class _MediaPickerFieldState extends State<MediaPickerField> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Tap to add images',
+                        'Tap to add images · up to ${widget.max}',
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.bodySmall,
                       ),

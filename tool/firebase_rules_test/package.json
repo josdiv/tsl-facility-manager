@@ -2,9 +2,9 @@
   "name": "tsl-firebase-rules-test",
   "private": true,
   "type": "module",
-  "description": "Security rules tests for Firestore and Storage, run against the Firebase emulators.",
+  "description": "Security rules tests for Firestore and Storage, run against their own emulators (ports 8085 and 9195), so they can run beside tool/emulators.sh.",
   "scripts": {
-    "test": "firebase emulators:exec --only firestore,storage --project demo-tsl \"node --test --test-concurrency=1 'test/*.test.js'\""
+    "test": "firebase emulators:exec --config firebase.json --only firestore,storage --project demo-tsl \"node --test --test-concurrency=1 'test/*.test.js'\""
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^4.0.1",

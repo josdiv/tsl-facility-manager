@@ -229,6 +229,45 @@ class WorkOrder extends Equatable {
   WorkOrder withHistory(List<WorkOrderEvent> history) =>
       _copy(history: history);
 
+  /// The same order with its photo lists replaced, e.g. once new photos are
+  /// uploaded.
+  WorkOrder withMedia({
+    List<String>? report,
+    List<String>? work,
+    List<String>? returned,
+    List<String>? inspection,
+  }) => WorkOrder(
+    id: id,
+    title: title,
+    description: description,
+    type: type,
+    status: status,
+    location: location,
+    zone: zone,
+    due: due,
+    submittedBy: submittedBy,
+    assignee: assignee,
+    submittedById: submittedById,
+    assigneeId: assigneeId,
+    locationId: locationId,
+    zoneId: zoneId,
+    isHighPriority: isHighPriority,
+    reportMedia: report ?? reportMedia,
+    workNote: workNote,
+    workMedia: work ?? workMedia,
+    submittedAt: submittedAt,
+    returnReason: returnReason,
+    returnFeedback: returnFeedback,
+    returnMedia: returned ?? returnMedia,
+    inspectionNote: inspectionNote,
+    inspectionChecks: inspectionChecks,
+    inspectionMedia: inspection ?? inspectionMedia,
+    assignmentNote: assignmentNote,
+    lastMessageAt: lastMessageAt,
+    lastMessagePreview: lastMessagePreview,
+    history: history,
+  );
+
   /// The same order with a newer latest message.
   WorkOrder withLastMessage(String preview, DateTime at) =>
       _copy(lastMessagePreview: preview, lastMessageAt: at);

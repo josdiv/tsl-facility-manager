@@ -353,6 +353,7 @@ class _TaskEvidencePageState extends State<TaskEvidencePage> {
             ),
             MediaPickerField(
               label: 'Add proof of completed work',
+              max: 6,
               onChanged: (media) => setState(() {
                 _media = media;
                 if (media.isNotEmpty) _showMediaError = false;

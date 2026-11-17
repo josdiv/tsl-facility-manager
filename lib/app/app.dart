@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import '../core/constants/app_constants.dart';
 import '../core/di/injection.dart';
+import '../core/media/photo_service.dart';
 import '../core/router/app_router.dart';
 import '../core/router/app_routes.dart';
 import '../core/session/app_role.dart';
@@ -71,6 +72,7 @@ class _TslFacilityManagerAppState extends State<TslFacilityManagerApp> {
           value: sl<AttendanceRepository>(),
         ),
         RepositoryProvider<LocationService>.value(value: sl<LocationService>()),
+        RepositoryProvider<PhotoService>.value(value: sl<PhotoService>()),
         RepositoryProvider<NotificationRepository>.value(
           value: sl<NotificationRepository>(),
         ),

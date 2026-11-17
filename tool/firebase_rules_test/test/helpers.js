@@ -10,12 +10,12 @@ export async function createEnv() {
     projectId: 'demo-tsl',
     firestore: {
       host: '127.0.0.1',
-      port: 8080,
+      port: 8085,
       rules: readFileSync(`${root}firestore.rules`, 'utf8'),
     },
     storage: {
       host: '127.0.0.1',
-      port: 9199,
+      port: 9195,
       rules: readFileSync(`${root}storage.rules`, 'utf8'),
     },
   });
@@ -66,11 +66,42 @@ export function order(overrides = {}) {
   };
 }
 
+// Storage rules read the app's named database, tsl-app, which the test
+// library can't seed directly, so seeded documents are copied there through
+// the emulator's REST API.
+const tslApp = 'http://127.0.0.1:8085/v1/projects/demo-tsl/databases/tsl-app/documents';
+
+function restValue(value) {
+  if (value === null || value === undefined) return { nullValue: null };
+  if (value instanceof Timestamp) return { timestampValue: value.toDate().toISOString() };
+  if (value instanceof GeoPoint) return { geoPointValue: { latitude: value.latitude, longitude: value.longitude } };
+  if (Array.isArray(value)) return { arrayValue: { values: value.map(restValue) } };
+  if (typeof value === 'boolean') return { booleanValue: value };
+  if (typeof value === 'number') return Number.isInteger(value) ? { integerValue: String(value) } : { doubleValue: value };
+  if (typeof value === 'object') return { mapValue: { fields: restFields(value) } };
+  return { stringValue: String(value) };
+}
+
+const restFields = (data) => Object.fromEntries(Object.entries(data).map(([k, v]) => [k, restValue(v)]));
+
+async function putTslApp(path, data) {
+  const res = await fetch(`${tslApp}/${path}`, {
+    method: 'PATCH',
+    headers: { Authorization: 'Bearer owner', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields: restFields(data) }),
+  });
+  if (!res.ok) throw new Error(`seeding tsl-app/${path} failed: ${res.status}`);
+}
+
 export async function seed(env) {
   await env.clearFirestore();
+  await fetch('http://127.0.0.1:8085/emulator/v1/projects/demo-tsl/databases/tsl-app/documents', { method: 'DELETE' });
   await env.withSecurityRulesDisabled(async (context) => {
     const db = context.firestore();
-    const put = (path, data) => setDoc(doc(db, path), data);
+    const put = async (path, data) => {
+      await setDoc(doc(db, path), data);
+      await putTslApp(path, data);
+    };
 
     for (const [uid, person] of Object.entries(people)) {
       await put(`users/${uid}`, {

@@ -393,6 +393,7 @@ class _ReviewInspectPageState extends State<ReviewInspectPage> {
               ),
               MediaPickerField(
                 label: 'Attach inspection photos',
+                max: 4,
                 onChanged: (media) => _media = media,
               ),
               // Always shown, so ticking the last item doesn't make the page
@@ -566,6 +567,7 @@ class _ReturnWithEvidencePageState extends State<ReturnWithEvidencePage> {
                     ),
                     MediaPickerField(
                       label: 'Add photographic proof',
+                      max: 4,
                       onChanged: (media) => _media = media,
                     ),
                     if (people.isNotEmpty)

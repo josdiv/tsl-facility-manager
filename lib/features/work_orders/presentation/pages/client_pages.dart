@@ -353,6 +353,7 @@ class _ReportIssuePageState extends State<ReportIssuePage> {
                 ),
                 MediaPickerField(
                   label: 'Photos',
+                  max: 4,
                   onChanged: (media) => _media = media,
                 ),
                 FilledButton(

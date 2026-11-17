@@ -3,6 +3,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../../core/firebase/firebase_env.dart';
+import '../../../core/media/photo_service.dart';
 import '../../../core/session/app_role.dart';
 import '../../profile/domain/user_profile.dart';
 import '../domain/work_order.dart';
@@ -15,16 +16,58 @@ import '../domain/work_order_repository.dart';
 /// Timeline events are written by the onWorkOrderWrite Cloud Function.
 class FirestoreWorkOrderRepository implements WorkOrderRepository {
   FirestoreWorkOrderRepository({
+    required PhotoService photos,
     FirebaseFirestore? firestore,
     FirebaseFunctions? functions,
     FirebaseAuth? auth,
-  }) : _db = firestore ?? appFirestore(),
+  }) : _photos = photos,
+       _db = firestore ?? appFirestore(),
        _functions = functions ?? appFunctions(),
        _auth = auth ?? FirebaseAuth.instance;
 
+  final PhotoService _photos;
   final FirebaseFirestore _db;
   final FirebaseFunctions _functions;
   final FirebaseAuth _auth;
+
+  /// Uploads any photos still on the phone to workOrders/{docId}/{kind}/ and
+  /// returns the list with their Storage paths.
+  Future<List<String>> _upload(
+    String docId,
+    String kind,
+    List<String> photos,
+  ) async {
+    final stamp = DateTime.now().millisecondsSinceEpoch;
+    try {
+      return [
+        for (final (i, photo) in photos.indexed)
+          isLocalPhoto(photo)
+              ? await _photos.upload(
+                  photo,
+                  photoPath(docId, kind, '${stamp}_$i.${_extension(photo)}'),
+                )
+              : photo,
+      ];
+    } on FirebaseException {
+      throw const WorkOrderFailure(
+        'Your photos couldn’t upload. Check your connection and try again.',
+      );
+    }
+  }
+
+  static String _extension(String path) {
+    final extension = path.split('.').last.toLowerCase();
+    return const {
+          'jpg',
+          'jpeg',
+          'png',
+          'webp',
+          'heic',
+          'heif',
+        }.contains(extension)
+        ? extension
+        : 'jpg';
+  }
 
   /// Reference → document ID, filled as orders arrive.
   final _docIds = <String, String>{};
@@ -81,7 +124,14 @@ class FirestoreWorkOrderRepository implements WorkOrderRepository {
     if (docId == null || uid == null) {
       throw WorkOrderFailure('${after.id} couldn’t be updated. Try again.');
     }
-    final changes = workOrderChanges(before, after, docId: docId);
+    // New photos go up first: Storage only accepts them while the order is
+    // still in the status before this change.
+    final uploaded = after.withMedia(
+      work: await _upload(docId, 'work', after.workMedia),
+      returned: await _upload(docId, 'return', after.returnMedia),
+      inspection: await _upload(docId, 'inspection', after.inspectionMedia),
+    );
+    final changes = workOrderChanges(before, uploaded, docId: docId);
     if (changes.isEmpty) return;
     try {
       await _orders.doc(docId).update({
@@ -102,6 +152,7 @@ class FirestoreWorkOrderRepository implements WorkOrderRepository {
   Future<String> report(IssueDraft draft, UserProfile client) async {
     // The ID is chosen here so photos can be uploaded under it first.
     final docId = _orders.doc().id;
+    final photos = await _upload(docId, 'report', draft.media);
     try {
       final result = await _functions
           .httpsCallable('reportIssue')
@@ -112,7 +163,7 @@ class FirestoreWorkOrderRepository implements WorkOrderRepository {
             'locationId': draft.location.id,
             'zoneId': draft.zone.id,
             'photos': [
-              for (final name in draft.media) photoPath(docId, 'report', name),
+              for (final photo in photos) photoPath(docId, 'report', photo),
             ],
           });
       final ref = (result.data as Map)['ref'] as String;
@@ -184,13 +235,12 @@ const returnReasonCodes = {
   'Wrong resolution': 'wrong_resolution',
 };
 
-/// Storage path for a photo, from the name the app shows.
-String photoPath(String docId, String kind, String name) =>
-    'workOrders/$docId/$kind/$name';
+/// Storage path for a photo. Already-stored photos keep their path.
+String photoPath(String docId, String kind, String photo) =>
+    photo.startsWith('workOrders/') ? photo : 'workOrders/$docId/$kind/$photo';
 
-List<String> _names(Object? paths) => [
-  for (final path in (paths as List?) ?? const [])
-    (path as String).split('/').last,
+List<String> _paths(Object? paths) => [
+  for (final path in (paths as List?) ?? const []) path as String,
 ];
 
 DateTime? _date(Object? value) => (value as Timestamp?)?.toDate();
@@ -222,19 +272,19 @@ WorkOrder? workOrderFromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     assignee: d['assignedToName'] as String?,
     assigneeId: d['assignedToId'] as String?,
     isHighPriority: d['priority'] == 'high' || d['priority'] == 'critical',
-    reportMedia: _names(d['reportPhotos']),
+    reportMedia: _paths(d['reportPhotos']),
     workNote: d['workNote'] as String?,
-    workMedia: _names(d['workPhotos']),
+    workMedia: _paths(d['workPhotos']),
     submittedAt: _date(d['submittedAt']),
     returnReason: returnReasonCodes.entries
         .where((e) => e.value == reasonCode)
         .firstOrNull
         ?.key,
     returnFeedback: d['returnFeedback'] as String?,
-    returnMedia: _names(d['returnPhotos']),
+    returnMedia: _paths(d['returnPhotos']),
     inspectionNote: d['inspectionNote'] as String?,
     inspectionChecks: List<String>.from(d['inspectionChecks'] as List? ?? []),
-    inspectionMedia: _names(d['inspectionPhotos']),
+    inspectionMedia: _paths(d['inspectionPhotos']),
     assignmentNote: d['assignmentNote'] as String?,
     lastMessageAt: _date(d['lastMessageAt']),
     lastMessagePreview: d['lastMessagePreview'] as String?,

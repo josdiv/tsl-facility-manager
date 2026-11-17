@@ -30,6 +30,7 @@ const people = {
   ngozi: { role: 'client', name: 'Ngozi Obi', email: 'wilson+client2@dbestdev.com', locationId: 'marina', companyId: 'acme' },
   // Clocks in at the developer's own location (see TEST_LOCATION below).
   tester: { role: 'staff', name: 'Field Tester', email: 'tester@thickservices.com', locationId: 'test-site', designation: 'Test technician' },
+  testlead: { role: 'supervisor', name: 'Test Lead', email: 'testlead@thickservices.com', locationId: 'test-site', designation: 'Test supervisor' },
 } as const;
 
 /**
@@ -66,10 +67,14 @@ type Event = [kind: string, status: string, actor: keyof typeof people | 'system
 interface SeedOrder {
   id: string; ref: string; title: string; description: string; type: 'client' | 'sla';
   status: string; zoneId: string; due: number; assignee: keyof typeof people;
+  locationId?: keyof typeof locations;
   priority?: string; client?: boolean; workNote?: string; submittedAt?: number; events: Event[];
 }
 
 const orders: SeedOrder[] = [
+  // At the Test Facility, so the Field Tester can clock in and work on it.
+  { id: 'seed1050', ref: 'WO-1050', title: 'Test lighting check', type: 'sla', status: 'open', zoneId: 'test-main', due: 6, assignee: 'tester', locationId: 'test-site',
+    description: 'Check the main building lights and photograph the panel.', events: [['reported', 'open', 'system', -1, 'Scheduled by SLA plan']] },
   { id: 'seed1048', ref: 'WO-1048', title: 'AHU-02 cooling fault', type: 'client', status: 'in_progress', zoneId: 'marina-a3', due: 3, assignee: 'emeka', priority: 'high', client: true,
     description: 'No cold air reaching the east office wing. Check condenser, filter and refrigerant pressure.',
     events: [['reported', 'open', 'daniel', -4], ['assigned', 'open', 'sarah', -4, 'Assigned to Emeka Okafor'], ['started', 'in_progress', 'emeka', -3, 'Checking refrigerant pressure']] },
@@ -118,7 +123,8 @@ async function main() {
   for (const [id, l] of Object.entries(locations)) {
     batch.set(db.doc(`locations/${id}`), {
       ...l, type: 'office', radiusM: 100, timeZone: 'Africa/Lagos',
-      siteManagerId: id === 'marina' ? 'sarah' : null, siteManagerName: id === 'marina' ? 'Sarah James' : null,
+      siteManagerId: id === 'marina' ? 'sarah' : id === 'test-site' ? 'testlead' : null,
+      siteManagerName: id === 'marina' ? 'Sarah James' : id === 'test-site' ? 'Test Lead' : null,
       zoneCount: zones[id].length, assetCount: id === 'marina' ? 2 : 0, status: 'active', ...audit,
     });
     for (const [zoneId, name] of zones[id]) {
@@ -146,11 +152,13 @@ async function main() {
     const assignee = people[o.assignee];
     batch.set(db.doc(`workOrders/${o.id}`), {
       ref: o.ref, type: o.type, title: o.title, description: o.description, priority: o.priority ?? 'medium', status: o.status,
-      locationId: 'marina', locationName: locations.marina.name, zoneId: o.zoneId, zoneName: zoneName(o.zoneId),
+      locationId: o.locationId ?? 'marina', locationName: locations[o.locationId ?? 'marina'].name, zoneId: o.zoneId, zoneName: zoneName(o.zoneId),
       assetId: null, assetName: null,
       companyId: o.client ? 'acme' : null, companyName: o.client ? 'Acme Corp Nigeria' : null,
       clientId: o.client ? 'daniel' : null, clientName: o.client ? 'Daniel Clarke' : null, slaId: null,
-      assignedToId: o.assignee, assignedToName: assignee.name, supervisorId: 'sarah', supervisorName: 'Sarah James', assignmentNote: null,
+      assignedToId: o.assignee, assignedToName: assignee.name,
+      supervisorId: o.locationId === 'test-site' ? 'testlead' : 'sarah',
+      supervisorName: o.locationId === 'test-site' ? 'Test Lead' : 'Sarah James', assignmentNote: null,
       dueAt: hours(o.due), reportPhotos: [], startedAt: o.status === 'in_progress' ? hours(-3) : null,
       workNote: o.workNote ?? null, workPhotos: o.workNote ? [`workOrders/${o.id}/work/after.jpg`] : [],
       submittedAt: o.submittedAt != null ? hours(o.submittedAt) : null,
@@ -185,7 +193,7 @@ async function main() {
     batch.update(db.doc(`workOrders/${orderId}`), { lastMessageAt: last.sentAt, lastMessagePreview: last.text });
   }
 
-  batch.set(db.doc('counters/workOrders'), { next: 1049 });
+  batch.set(db.doc('counters/workOrders'), { next: 1051 });
   batch.set(db.doc('counters/requisitions'), { next: 1002 });
   batch.set(db.doc('counters/assets'), { next: 3 });
   batch.set(db.doc('counters/inventory'), { next: 4 });
