@@ -20,6 +20,10 @@ abstract final class AppRoutes {
   static const supervisorClock = '/supervisor/clock';
   static const supervisorAlerts = '/supervisor/alerts';
 
+  /// The parts request form, optionally with a work order already chosen.
+  static String staffPartsNew({String? workOrderId}) =>
+      '/staff/parts/new${workOrderId == null ? '' : '?order=$workOrderId'}';
+
   static String clientRequest(String id) => '/client/request/$id';
   static String staffTask(String id) => '/staff/task/$id';
   static String staffSubmission(String id, {bool justSubmitted = false}) =>

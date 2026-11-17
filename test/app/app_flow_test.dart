@@ -20,6 +20,14 @@ Future<void> pumpApp(
 }
 
 Future<void> tapText(WidgetTester tester, String text) async {
+  // Long pages build lazily, so scroll until the target exists.
+  if (find.text(text).evaluate().isEmpty) {
+    await tester.scrollUntilVisible(
+      find.text(text),
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+  }
   final finder = find.text(text).last;
   await tester.ensureVisible(finder);
   await tester.pumpAndSettle();
@@ -53,6 +61,7 @@ final routes = <String>[
   AppRoutes.staffTasks,
   AppRoutes.staffClock,
   AppRoutes.staffParts,
+  AppRoutes.staffPartsNew(),
   AppRoutes.supervisorHome,
   AppRoutes.supervisorReview,
   AppRoutes.supervisorClock,
@@ -145,11 +154,11 @@ void main() {
     await tapText(tester, 'Verify & continue');
     expect(find.text('Enter all 6 digits to continue.'), findsOneWidget);
 
+    // The sixth digit verifies the code without tapping the button.
     for (var i = 0; i < 6; i++) {
       await tester.enterText(find.byType(TextField).at(i), '$i');
     }
     await tester.pumpAndSettle();
-    await tapText(tester, 'Verify & continue');
     expect(find.text('Hello, Daniel 👋'), findsOneWidget);
 
     await tapText(tester, 'Report');
@@ -275,15 +284,44 @@ void main() {
     );
   });
 
-  testWidgets('supervisor reassigns team work', (tester) async {
-    await pumpApp(tester, AppRoutes.supervisorReassign('WO-1047'));
+  testWidgets('supervisor reassigns team work with a note', (tester) async {
+    await pumpApp(
+      tester,
+      AppRoutes.supervisorOrder('WO-1047'),
+      size: const Size(360, 1600),
+    );
+    await tapText(tester, 'Reassign');
     await tapText(tester, 'David Adeyemi');
+    await enterField(tester, 'Assignment note', 'Overdue, do this first');
     await tapText(tester, 'Reassign & notify');
-    expect(find.text('Hello, Sarah 👋'), findsOneWidget);
+
+    // Back on the work order, now showing the new technician and the note.
+    expect(find.text('Work order'), findsOneWidget);
+    expect(find.text('David Adeyemi'), findsOneWidget);
+    expect(find.textContaining('Overdue, do this first'), findsOneWidget);
     expect(
       find.text('Reassigned to David Adeyemi · notification sent'),
       findsOneWidget,
     );
+  });
+
+  testWidgets('signing out mid-shift offers to clock out first', (
+    tester,
+  ) async {
+    await pumpApp(tester, AppRoutes.staffClock, size: const Size(360, 1600));
+    await tapText(tester, 'Verify & clock in');
+    GoRouter.of(tester.element(find.text('Assigned tasks')))
+        .push(AppRoutes.profile(AppRole.staff));
+    await tester.pumpAndSettle();
+
+    await tapText(tester, 'Sign out');
+    expect(find.text('You’re still clocked in'), findsOneWidget);
+    await tapText(tester, 'Cancel');
+    expect(find.text('Profile'), findsOneWidget);
+
+    await tapText(tester, 'Sign out');
+    await tapText(tester, 'Clock out & sign out');
+    expect(find.text('Welcome back.'), findsOneWidget);
   });
 
   testWidgets('a sent message appears in the conversation', (tester) async {
@@ -336,8 +374,10 @@ void main() {
     expect(find.text('Clocked in at'), findsNothing);
   });
 
-  testWidgets('a valid parts request is submitted', (tester) async {
+  testWidgets('a valid parts request is submitted and listed', (tester) async {
     await pumpApp(tester, AppRoutes.staffParts, size: const Size(360, 1600));
+    expect(find.text('Pending approval'), findsNothing);
+    await tapText(tester, 'Request parts');
     await tapText(tester, 'Submit requisition');
     expect(find.text('Enter a quantity of at least 1'), findsOneWidget);
 
@@ -345,7 +385,22 @@ void main() {
     await enterField(tester, 'Reason', 'Replace damaged filters');
     await tapText(tester, 'Submit requisition');
     expect(find.text('REQ-082 submitted for admin approval'), findsOneWidget);
-    expect(find.textContaining('Today ('), findsOneWidget);
+    expect(find.text('2 × HVAC air filter'), findsOneWidget);
+    expect(find.text('Pending approval'), findsOneWidget);
+  });
+
+  testWidgets('a task opens the parts form with its work order chosen', (
+    tester,
+  ) async {
+    await pumpApp(
+      tester,
+      AppRoutes.staffTask('WO-1048'),
+      size: const Size(360, 1600),
+    );
+    expect(find.text('Location'), findsOneWidget);
+    expect(find.textContaining('Marina Towers'), findsWidgets);
+    await tapText(tester, 'Request parts');
+    expect(find.text('WO-1048 · AHU-02 cooling fault'), findsOneWidget);
   });
 
   testWidgets('a supervisor stays on attendance after clocking in', (

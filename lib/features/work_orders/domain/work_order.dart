@@ -60,6 +60,7 @@ class WorkOrder extends Equatable {
     this.returnFeedback,
     this.returnMedia = const [],
     this.inspectionNote,
+    this.assignmentNote,
     this.history = const [],
   });
 
@@ -82,6 +83,9 @@ class WorkOrder extends Equatable {
   final String? returnFeedback;
   final List<String> returnMedia;
   final String? inspectionNote;
+
+  /// The supervisor's note to the technician from the last reassignment.
+  final String? assignmentNote;
   final List<WorkOrderEvent> history;
 
   /// Staff can only change work that is in hand or was returned to them.
@@ -153,11 +157,20 @@ class WorkOrder extends Equatable {
     );
   }
 
-  WorkOrder reassign({required String assignee, required DateTime at}) {
+  WorkOrder reassign({
+    required String assignee,
+    required DateTime at,
+    String? note,
+  }) {
     _require(status != WorkOrderStatus.completed, 'reassign');
     return _copy(
       assignee: assignee,
-      history: [...history, WorkOrderEvent('Assigned to $assignee', at)],
+      assignmentNote: note,
+      clearAssignmentNote: note == null,
+      history: [
+        ...history,
+        WorkOrderEvent('Assigned to $assignee', at, note: note),
+      ],
     );
   }
 
@@ -177,6 +190,8 @@ class WorkOrder extends Equatable {
     String? returnFeedback,
     List<String>? returnMedia,
     String? inspectionNote,
+    String? assignmentNote,
+    bool clearAssignmentNote = false,
     List<WorkOrderEvent>? history,
   }) {
     return WorkOrder(
@@ -199,6 +214,9 @@ class WorkOrder extends Equatable {
       returnFeedback: returnFeedback ?? this.returnFeedback,
       returnMedia: returnMedia ?? this.returnMedia,
       inspectionNote: inspectionNote ?? this.inspectionNote,
+      assignmentNote: clearAssignmentNote
+          ? null
+          : assignmentNote ?? this.assignmentNote,
       history: history ?? this.history,
     );
   }
@@ -224,6 +242,7 @@ class WorkOrder extends Equatable {
     returnFeedback,
     returnMedia,
     inspectionNote,
+    assignmentNote,
     history,
   ];
 }

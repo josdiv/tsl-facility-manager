@@ -32,6 +32,9 @@ class LabelledTextField extends StatelessWidget {
     this.initialValue,
     this.controller,
     this.validator,
+    this.textInputAction,
+    this.onSubmitted,
+    this.suffixIcon,
     super.key,
   });
 
@@ -44,8 +47,19 @@ class LabelledTextField extends StatelessWidget {
   final TextEditingController? controller;
   final FormFieldValidator<String>? validator;
 
+  /// The keyboard's action key. Single-line fields default to "next", which
+  /// moves to the following field; multi-line fields keep the newline key.
+  final TextInputAction? textInputAction;
+
+  /// Called when the user presses the action key, such as "done" on the last
+  /// field of a form.
+  final ValueChanged<String>? onSubmitted;
+
+  final Widget? suffixIcon;
+
   @override
   Widget build(BuildContext context) {
+    final singleLine = obscureText || maxLines == 1;
     return _FieldFrame(
       label: label,
       child: TextFormField(
@@ -53,10 +67,14 @@ class LabelledTextField extends StatelessWidget {
         initialValue: initialValue,
         validator: validator,
         autovalidateMode: AutovalidateMode.onUserInteractionIfError,
-        maxLines: obscureText ? 1 : maxLines,
+        maxLines: singleLine ? 1 : maxLines,
         keyboardType: keyboardType,
         obscureText: obscureText,
-        decoration: InputDecoration(hintText: hint),
+        textInputAction:
+            textInputAction ??
+            (singleLine ? TextInputAction.next : TextInputAction.newline),
+        onFieldSubmitted: onSubmitted,
+        decoration: InputDecoration(hintText: hint, suffixIcon: suffixIcon),
       ),
     );
   }

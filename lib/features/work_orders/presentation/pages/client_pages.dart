@@ -14,6 +14,7 @@ import '../../../../core/widgets/labelled_field.dart';
 import '../../../../core/widgets/link_text_button.dart';
 import '../../../../core/widgets/media_widgets.dart';
 import '../../../../core/widgets/page_frames.dart';
+import '../../../profile/presentation/profile_cubit.dart';
 import '../../../../core/widgets/progress_timeline.dart';
 import '../../../../core/widgets/section_header.dart';
 import '../../../../core/widgets/stat_tile.dart';
@@ -174,18 +175,26 @@ class ReportIssuePage extends StatefulWidget {
 }
 
 class _ReportIssuePageState extends State<ReportIssuePage> {
-  static const _locations = [
-    'Marina Towers, Lagos',
-    'Cedar Court, Abuja',
-    'Harbour Point, Lekki',
-  ];
-  static const _zones = ['Tower A · Floor 3', 'Reception', 'Car park'];
+  /// Zones for each facility. Sample data until Firestore arrives.
+  static const _zonesByLocation = {
+    'Marina Towers, Lagos': ['Tower A · Floor 3', 'Reception', 'Car park'],
+    'Cedar Court, Abuja': ['Main hall', 'Basement plant room', 'Car park'],
+    'Harbour Point, Lekki': ['Lobby', 'Floor 2 offices', 'Rooftop'],
+  };
+  static final _locations = _zonesByLocation.keys.toList();
 
   final _form = GlobalKey<FormState>();
   final _title = TextEditingController();
   final _description = TextEditingController();
-  var _location = _locations.first;
-  var _zone = _zones.first;
+  // Starts on the facility the client chose in their profile.
+  late var _location = _defaultLocation();
+  late var _zone = _zonesByLocation[_location]!.first;
+
+  String _defaultLocation() {
+    final facility = context.read<ProfileCubit>().of(AppRole.client).facility;
+    return _zonesByLocation.containsKey(facility) ? facility : _locations.first;
+  }
+
   var _media = const <String>[];
   var _formVersion = 0;
 
@@ -219,8 +228,8 @@ class _ReportIssuePageState extends State<ReportIssuePage> {
     _description.clear();
     setState(() {
       _media = const [];
-      _location = _locations.first;
-      _zone = _zones.first;
+      _location = _defaultLocation();
+      _zone = _zonesByLocation[_location]!.first;
       _formVersion++;
     });
     context.push(AppRoutes.clientRequest(id));
@@ -253,11 +262,17 @@ class _ReportIssuePageState extends State<ReportIssuePage> {
                 LabelledDropdown(
                   label: 'Location',
                   options: _locations,
-                  onChanged: (value) => _location = value,
+                  initialValue: _location,
+                  onChanged: (value) => setState(() {
+                    _location = value;
+                    _zone = _zonesByLocation[value]!.first;
+                  }),
                 ),
                 LabelledDropdown(
+                  // A new location brings its own zones, so start afresh.
+                  key: ValueKey(_location),
                   label: 'Building / zone',
-                  options: _zones,
+                  options: _zonesByLocation[_location]!,
                   onChanged: (value) => _zone = value,
                 ),
                 LabelledTextField(
@@ -350,9 +365,11 @@ class RequestTrackingPage extends StatelessWidget {
                       ],
                     ),
                   const SizedBox(height: 4),
+                  KeyValueRow('Location', '${order.location} · ${order.zone}'),
                   KeyValueRow(
                     'Expected response',
                     dateTimeLabel(order.due, now),
+                    divider: false,
                   ),
                 ],
               ),

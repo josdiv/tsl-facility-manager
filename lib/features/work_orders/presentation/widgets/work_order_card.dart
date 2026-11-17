@@ -103,7 +103,7 @@ class WorkOrderCard extends StatelessWidget {
               const SizedBox(width: 4),
               Expanded(
                 child: Text(
-                  dateTimeLabel(order.due, DateTime.now()),
+                  'Due ${dateTimeLabel(order.due, DateTime.now())}',
                   style: text.bodySmall,
                 ),
               ),

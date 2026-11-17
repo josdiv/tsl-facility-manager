@@ -247,16 +247,67 @@ class _TaskEvidencePageState extends State<TaskEvidencePage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Reported issue', style: text.titleMedium),
+                  Text(
+                    order.type == WorkOrderType.sla
+                        ? 'Task details'
+                        : 'Reported issue',
+                    style: text.titleMedium,
+                  ),
                   const SizedBox(height: 8),
                   Text(order.description, style: text.bodyMedium),
                   if (order.reportMedia.isNotEmpty) ...[
                     const SizedBox(height: 12),
                     MediaGrid(order.reportMedia),
                   ],
+                  const SizedBox(height: 4),
+                  KeyValueRow('Location', order.location),
+                  KeyValueRow(
+                    'Zone',
+                    order.zone,
+                    divider: order.type == WorkOrderType.client,
+                  ),
+                  if (order.type == WorkOrderType.client)
+                    KeyValueRow(
+                      'Reported by',
+                      order.submittedBy,
+                      divider: false,
+                    ),
                 ],
               ),
             ),
+            if (order.assignmentNote != null && order.status.isActive)
+              InfoBanner(
+                'Note from your supervisor: ${order.assignmentNote}',
+                icon: Icons.sticky_note_2_outlined,
+                tone: BannerTone.neutral,
+              ),
+            if (order.status.isActive)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => context.push(
+                          AppRoutes.chat(AppRole.staff, order.id),
+                        ),
+                        icon: const Icon(Icons.chat_bubble_outline, size: 18),
+                        label: const Text('Message'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => context.push(
+                          AppRoutes.staffPartsNew(workOrderId: order.id),
+                        ),
+                        icon: const Icon(Icons.inventory_2_outlined, size: 18),
+                        label: const Text('Request parts'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             if (order.status == WorkOrderStatus.returned) _ReturnNotice(order),
             ..._actions(context, order),
           ],
@@ -458,6 +509,7 @@ class SubmissionPage extends StatelessWidget {
                   KeyValueRow(
                     'Evidence',
                     '$images ${images == 1 ? 'image' : 'images'}',
+                    divider: false,
                   ),
                 ],
               ),

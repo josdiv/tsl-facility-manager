@@ -109,8 +109,9 @@ class _AttendanceBody extends StatelessWidget {
                 reading.distance,
                 valueColor: canClockIn ? AppColors.success : AppColors.danger,
               ),
-              KeyValueRow('GPS accuracy', reading.accuracy),
-              if (clockedIn) const KeyValueRow('Clocked in at', '08:02 AM'),
+              KeyValueRow('GPS accuracy', reading.accuracy, divider: clockedIn),
+              if (clockedIn)
+                const KeyValueRow('Clocked in at', '08:02 AM', divider: false),
             ],
           ),
         ),

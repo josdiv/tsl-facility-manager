@@ -11,12 +11,15 @@ import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/eyebrow.dart';
 import '../../../../core/widgets/info_banner.dart';
 import '../../../../core/widgets/initials_avatar.dart';
+import '../../../../core/widgets/key_value_row.dart';
 import '../../../../core/widgets/labelled_field.dart';
 import '../../../../core/widgets/media_widgets.dart';
 import '../../../../core/widgets/page_frames.dart';
+import '../../../../core/widgets/progress_timeline.dart';
 import '../../../../core/widgets/section_header.dart';
 import '../../../../core/widgets/stat_tile.dart';
 import '../../../attendance/presentation/attendance_page.dart';
+import '../../domain/work_order.dart';
 import '../bloc/work_orders_bloc.dart';
 import '../widgets/work_order_card.dart';
 import '../widgets/work_order_scope.dart';
@@ -251,8 +254,34 @@ class _ReviewInspectPageState extends State<ReviewInspectPage> {
               style: text.headlineSmall,
             ),
             const SizedBox(height: 4),
-            Text('${order.id} · ${order.title}', style: text.bodyMedium),
+            Text(
+              [
+                order.id,
+                order.isAwaitingReview ? order.title : order.type.label,
+                'Due ${dateTimeLabel(order.due, DateTime.now())}',
+              ].join(' · '),
+              style: text.bodyMedium,
+            ),
             const SizedBox(height: 14),
+            AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  KeyValueRow('Location', order.location),
+                  KeyValueRow(
+                    'Zone',
+                    order.zone,
+                    divider: order.type == WorkOrderType.client,
+                  ),
+                  if (order.type == WorkOrderType.client)
+                    KeyValueRow(
+                      'Reported by',
+                      order.submittedBy,
+                      divider: false,
+                    ),
+                ],
+              ),
+            ),
             AppCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -327,12 +356,15 @@ class _ReviewInspectPageState extends State<ReviewInspectPage> {
                 maxLines: 3,
               ),
               const MediaPickerField(label: 'Attach inspection photos'),
-              if (!canConfirm)
-                const InfoBanner(
-                  'Tick every checklist item to confirm and close.',
-                  icon: Icons.checklist,
-                  tone: BannerTone.neutral,
-                ),
+              // Always shown, so ticking the last item doesn't make the page
+              // jump.
+              InfoBanner(
+                canConfirm
+                    ? 'All checks done. You can confirm and close.'
+                    : 'Tick every checklist item to confirm and close.',
+                icon: canConfirm ? Icons.check_circle_outline : Icons.checklist,
+                tone: canConfirm ? BannerTone.success : BannerTone.neutral,
+              ),
               FilledButton.icon(
                 style: FilledButton.styleFrom(backgroundColor: AppColors.teal),
                 onPressed: canConfirm ? _confirm : null,
@@ -351,12 +383,40 @@ class _ReviewInspectPageState extends State<ReviewInspectPage> {
               ),
               const SizedBox(height: 8),
             ],
-            if (order.status.isActive)
+            if (order.status.isActive) ...[
               OutlinedButton(
                 onPressed: () =>
                     context.push(AppRoutes.supervisorReassign(order.id)),
                 child: const Text('Reassign'),
               ),
+              const SizedBox(height: 8),
+            ],
+            OutlinedButton.icon(
+              onPressed: () =>
+                  context.push(AppRoutes.chat(AppRole.supervisor, order.id)),
+              icon: const Icon(Icons.chat_bubble_outline, size: 18),
+              label: const Text('Message'),
+            ),
+            const SizedBox(height: 16),
+            AppCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('History', style: text.titleMedium),
+                  const SizedBox(height: 14),
+                  ProgressTimeline([
+                    for (final event in order.history.reversed)
+                      TimelineStep(
+                        event.title,
+                        [
+                          dateTimeLabel(event.at, DateTime.now()),
+                          ?event.note,
+                        ].join(' · '),
+                      ),
+                  ]),
+                ],
+              ),
+            ),
           ],
         );
       },
@@ -503,16 +563,33 @@ class ReassignTaskPage extends StatefulWidget {
 
 class _ReassignTaskPageState extends State<ReassignTaskPage> {
   String? _selected;
+  final _note = TextEditingController();
+
+  @override
+  void dispose() {
+    _note.dispose();
+    super.dispose();
+  }
 
   void _submit(String name) {
+    final note = _note.text.trim();
     context.read<WorkOrdersBloc>().add(
       WorkOrderChanged(
         widget.id,
-        (order, now) => order.reassign(assignee: name, at: now),
+        (order, now) => order.reassign(
+          assignee: name,
+          at: now,
+          note: note.isEmpty ? null : note,
+        ),
       ),
     );
     _toast(context, 'Reassigned to $name · notification sent');
-    context.go(AppRoutes.supervisorHome);
+    // Back to the work order, which now shows the new technician.
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go(AppRoutes.supervisorReview);
+    }
   }
 
   @override
@@ -551,15 +628,10 @@ class _ReassignTaskPageState extends State<ReassignTaskPage> {
                         value: worker.$1,
                         contentPadding: EdgeInsets.zero,
                         controlAffinity: ListTileControlAffinity.trailing,
-                        title: Row(
-                          children: [
-                            InitialsAvatar(worker.$2),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(worker.$1, style: text.titleSmall),
-                            ),
-                          ],
-                        ),
+                        // The avatar sits in its own slot so the name and the
+                        // role line up under each other.
+                        secondary: InitialsAvatar(worker.$2),
+                        title: Text(worker.$1, style: text.titleSmall),
                         subtitle: Padding(
                           padding: const EdgeInsets.only(top: 4),
                           child: Text(
@@ -572,9 +644,10 @@ class _ReassignTaskPageState extends State<ReassignTaskPage> {
                 ],
               ),
             ),
-            const LabelledTextField(
+            LabelledTextField(
               label: 'Assignment note',
               hint: 'Anything the worker should know?',
+              controller: _note,
               maxLines: 3,
             ),
             FilledButton(

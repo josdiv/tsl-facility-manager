@@ -202,6 +202,19 @@ class _NotificationsPageState extends State<NotificationsPage> {
               ],
             ),
           ),
+          if (!isRead)
+            Semantics(
+              label: 'Unread',
+              child: Container(
+                width: 10,
+                height: 10,
+                margin: const EdgeInsets.only(left: 8, top: 4),
+                decoration: const BoxDecoration(
+                  color: AppColors.primary,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
         ],
       ),
     );

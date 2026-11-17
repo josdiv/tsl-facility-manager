@@ -4,11 +4,17 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/router/app_routes.dart';
 import '../../../core/session/app_role.dart';
+import '../../../core/utils/date_labels.dart';
+import '../../../core/widgets/app_badge.dart';
+import '../../../core/widgets/app_card.dart';
 import '../../../core/widgets/info_banner.dart';
 import '../../../core/widgets/labelled_field.dart';
 import '../../../core/widgets/page_frames.dart';
 import '../../work_orders/data/sample_work_orders.dart';
 import '../../work_orders/presentation/bloc/work_orders_bloc.dart';
+import '../../work_orders/presentation/widgets/work_order_scope.dart';
+import '../domain/requisition.dart';
+import 'requisitions_cubit.dart';
 
 /// Checks a requested quantity against what the location has in stock.
 String? quantityError(String? value, int stock) {
@@ -18,8 +24,89 @@ String? quantityError(String? value, int stock) {
   return null;
 }
 
+BadgeTone _toneFor(RequisitionStatus status) => switch (status) {
+  RequisitionStatus.pending => BadgeTone.warning,
+  RequisitionStatus.approved => BadgeTone.success,
+  RequisitionStatus.rejected => BadgeTone.danger,
+};
+
+/// The Parts tab: the technician's requests and their approval status.
+class PartsListPage extends StatelessWidget {
+  const PartsListPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final requests = context.watch<RequisitionsCubit>().state;
+    final text = Theme.of(context).textTheme;
+    final now = DateTime.now();
+    return TabPage(
+      title: 'Parts',
+      role: AppRole.staff,
+      children: [
+        Text('Parts requests', style: text.titleLarge),
+        const SizedBox(height: 6),
+        Text(
+          'Stock is issued after facility admin approval.',
+          style: text.bodyMedium,
+        ),
+        const SizedBox(height: 16),
+        FilledButton.icon(
+          onPressed: () => context.push(AppRoutes.staffPartsNew()),
+          icon: const Icon(Icons.add),
+          label: const Text('Request parts'),
+        ),
+        const SizedBox(height: 16),
+        if (requests.isEmpty)
+          const EmptyListMessage('You haven’t requested any parts yet.'),
+        for (final request in requests)
+          AppCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        [request.ref, ?request.workOrderId].join(' · '),
+                        style: text.bodySmall,
+                      ),
+                    ),
+                    Text(
+                      dateTimeLabel(request.requestedAt, now),
+                      style: text.bodySmall,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                AppBadge(request.status.label, tone: _toneFor(request.status)),
+                const SizedBox(height: 8),
+                Text(
+                  '${request.quantity} × ${request.itemName}',
+                  style: text.titleMedium,
+                ),
+                const SizedBox(height: 4),
+                Text(request.reason, style: text.bodyMedium),
+                if (request.rejectionReason != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Admin: ${request.rejectionReason}',
+                    style: text.bodySmall,
+                  ),
+                ],
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// The request form. Opened from the Parts tab, or from a task with that
+/// work order already chosen.
 class PartsRequestPage extends StatefulWidget {
-  const PartsRequestPage({super.key});
+  const PartsRequestPage({this.workOrderId, super.key});
+
+  final String? workOrderId;
 
   @override
   State<PartsRequestPage> createState() => _PartsRequestPageState();
@@ -31,11 +118,13 @@ class _PartsRequestPageState extends State<PartsRequestPage> {
     'LED panel': 8,
     'Generator oil': 6,
   };
+  static const _noOrder = 'None · general stock';
 
   final _form = GlobalKey<FormState>();
   final _quantity = TextEditingController();
   final _reason = TextEditingController();
   var _item = _items.keys.first;
+  late String? _workOrderId = widget.workOrderId;
 
   @override
   void dispose() {
@@ -46,12 +135,20 @@ class _PartsRequestPageState extends State<PartsRequestPage> {
 
   void _submit() {
     if (!_form.currentState!.validate()) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('REQ-082 submitted for admin approval')),
+    final ref = context.read<RequisitionsCubit>().submit(
+      itemName: _item,
+      quantity: int.parse(_quantity.text.trim()),
+      reason: _reason.text.trim(),
+      workOrderId: _workOrderId,
     );
-    _quantity.clear();
-    _reason.clear();
-    context.go(AppRoutes.staffTasks);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$ref submitted for admin approval')),
+    );
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go(AppRoutes.staffParts);
+    }
   }
 
   @override
@@ -62,31 +159,36 @@ class _PartsRequestPageState extends State<PartsRequestPage> {
         .state
         .assignedTo(sampleStaff)
         .where((order) => order.status.isActive)
-        .map((order) => '${order.id} · ${order.title}')
         .toList();
+    String labelFor(String id) {
+      final order = orders.where((o) => o.id == id).firstOrNull;
+      return order == null ? id : '${order.id} · ${order.title}';
+    }
+
     final stock = _items[_item]!;
-    return TabPage(
-      title: 'Parts request',
-      role: AppRole.staff,
+    return DetailPage(
+      title: 'Request parts',
       children: [
         Form(
           key: _form,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('Request parts', style: text.titleLarge),
-              const SizedBox(height: 6),
               Text(
                 'Stock is issued after facility admin approval.',
                 style: text.bodyMedium,
               ),
               const SizedBox(height: 16),
-              if (orders.isNotEmpty)
-                LabelledDropdown(
-                  key: ValueKey(orders.length),
-                  label: 'Linked work order',
-                  options: orders,
-                ),
+              LabelledDropdown(
+                label: 'Linked work order',
+                options: [_noOrder, for (final o in orders) labelFor(o.id)],
+                initialValue: _workOrderId == null
+                    ? _noOrder
+                    : labelFor(_workOrderId!),
+                onChanged: (value) => _workOrderId = value == _noOrder
+                    ? null
+                    : value.split(' · ').first,
+              ),
               const LabelledDropdown(
                 label: 'Location',
                 options: ['Marina Towers, Lagos'],

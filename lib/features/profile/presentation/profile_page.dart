@@ -10,6 +10,7 @@ import '../../../core/widgets/initials_avatar.dart';
 import '../../../core/widgets/key_value_row.dart';
 import '../../../core/widgets/labelled_field.dart';
 import '../../../core/widgets/page_frames.dart';
+import '../../attendance/presentation/attendance_page.dart';
 import '../domain/user_profile.dart';
 import 'profile_cubit.dart';
 
@@ -53,6 +54,40 @@ class _ProfilePageState extends State<ProfilePage> {
         .showSnackBar(const SnackBar(content: Text('Profile updated')));
   }
 
+  /// Signing out mid-shift would leave the shift open, so ask first.
+  Future<void> _signOut() async {
+    final attendance = context.read<AttendanceCubit>();
+    if (attendance.state.contains(widget.role)) {
+      final choice = await showDialog<_SignOutChoice>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('You’re still clocked in'),
+          content: const Text(
+            'Clock out now so your shift ends at the right time? If you only '
+            'sign out, your shift stays open.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, _SignOutChoice.only),
+              child: const Text('Sign out only'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, _SignOutChoice.clockOut),
+              child: const Text('Clock out & sign out'),
+            ),
+          ],
+        ),
+      );
+      if (choice == null || !mounted) return;
+      if (choice == _SignOutChoice.clockOut) attendance.clockOut(widget.role);
+    }
+    if (mounted) context.go(AppRoutes.login(widget.role));
+  }
+
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
@@ -92,9 +127,13 @@ class _ProfilePageState extends State<ProfilePage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    KeyValueRow('Email', profile.email),
+                    KeyValueRow(
+                      'Email',
+                      profile.email,
+                      divider: !canChooseFacility(widget.role),
+                    ),
                     if (!canChooseFacility(widget.role)) ...[
-                      KeyValueRow('Facility', profile.facility),
+                      KeyValueRow('Facility', profile.facility, divider: false),
                       const SizedBox(height: 8),
                       Text(
                         'Your facility is assigned by your administrator.',
@@ -130,7 +169,7 @@ class _ProfilePageState extends State<ProfilePage> {
         const SizedBox(height: 4),
         OutlinedButton.icon(
           style: OutlinedButton.styleFrom(foregroundColor: AppColors.danger),
-          onPressed: () => context.go(AppRoutes.login(widget.role)),
+          onPressed: _signOut,
           icon: const Icon(Icons.logout),
           label: const Text('Sign out'),
         ),
@@ -138,3 +177,5 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 }
+
+enum _SignOutChoice { only, clockOut }

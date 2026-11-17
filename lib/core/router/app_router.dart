@@ -58,7 +58,7 @@ GoRouter createAppRouter({String initialLocation = AppRoutes.clientLogin}) {
           AppRoutes.staffClock,
           () => const AttendancePage(role: AppRole.staff),
         ),
-        _tab(AppRoutes.staffParts, () => const PartsRequestPage()),
+        _tab(AppRoutes.staffParts, () => const PartsListPage()),
       ]),
       _shell(AppRole.supervisor, [
         _tab(AppRoutes.supervisorHome, () => const SupervisorHomePage()),
@@ -80,6 +80,10 @@ GoRouter createAppRouter({String initialLocation = AppRoutes.clientLogin}) {
       _route(
         '/staff/task/:id',
         (s) => TaskEvidencePage(id: s.pathParameters['id']!),
+      ),
+      _route(
+        '/staff/parts/new',
+        (s) => PartsRequestPage(workOrderId: s.uri.queryParameters['order']),
       ),
       _route(
         '/staff/task/:id/submission',

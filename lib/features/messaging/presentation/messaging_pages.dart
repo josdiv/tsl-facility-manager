@@ -83,10 +83,16 @@ class ConversationsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final threads = context.watch<MessagesCubit>().state;
-    final orders = ordersForRole(
-      context.watch<WorkOrdersBloc>().state,
-      role,
-    ).where((order) => threads[order.id]?.isNotEmpty ?? false).toList();
+    final orders =
+        ordersForRole(
+            context.watch<WorkOrdersBloc>().state,
+            role,
+          ).where((order) => threads[order.id]?.isNotEmpty ?? false).toList()
+          // Latest conversation first. Times are same-day "HH:mm" in sample data.
+          ..sort(
+            (a, b) =>
+                threads[b.id]!.last.time.compareTo(threads[a.id]!.last.time),
+          );
     final text = Theme.of(context).textTheme;
     final items = <Widget>[
       if (orders.isEmpty) const EmptyListMessage('No conversations yet.'),

@@ -1,4 +1,5 @@
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
 import 'core/di/injection.dart';
@@ -16,6 +17,8 @@ Future<void> bootstrap({
   FirebaseInitializer firebase = initializeFirebase,
 }) async {
   WidgetsFlutterBinding.ensureInitialized();
+  // The app is designed for phones held upright.
+  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   await firebase();
   configureDependencies();
 }

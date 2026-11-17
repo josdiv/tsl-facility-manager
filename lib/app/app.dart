@@ -8,6 +8,7 @@ import '../core/router/app_router.dart';
 import '../core/theme/app_theme.dart';
 import '../features/attendance/presentation/attendance_page.dart';
 import '../features/messaging/presentation/messaging_pages.dart';
+import '../features/parts/presentation/requisitions_cubit.dart';
 import '../features/profile/presentation/profile_cubit.dart';
 import '../features/work_orders/presentation/bloc/work_orders_bloc.dart';
 
@@ -41,6 +42,7 @@ class _TslFacilityManagerAppState extends State<TslFacilityManagerApp> {
         BlocProvider(create: (_) => sl<AttendanceCubit>()),
         BlocProvider(create: (_) => sl<MessagesCubit>()),
         BlocProvider(create: (_) => sl<ProfileCubit>()),
+        BlocProvider(create: (_) => sl<RequisitionsCubit>()),
       ],
       child: MaterialApp.router(
         title: AppConstants.appName,

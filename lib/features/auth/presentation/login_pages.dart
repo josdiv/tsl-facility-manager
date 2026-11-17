@@ -89,6 +89,8 @@ class _ClientLoginPageState extends State<ClientLoginPage> {
             controller: _email,
             keyboardType: TextInputType.emailAddress,
             validator: emailText,
+            textInputAction: TextInputAction.done,
+            onSubmitted: (_) => _submit(),
           ),
         ),
         FilledButton(
@@ -121,6 +123,7 @@ class StaffLoginPage extends StatefulWidget {
 class _StaffLoginPageState extends State<StaffLoginPage> {
   final _form = GlobalKey<FormState>();
   final _email = TextEditingController();
+  var _hidePassword = true;
 
   @override
   void dispose() {
@@ -161,13 +164,33 @@ class _StaffLoginPageState extends State<StaffLoginPage> {
               LabelledTextField(
                 label: 'Password',
                 hint: 'Your password',
-                obscureText: true,
+                obscureText: _hidePassword,
                 validator: (value) =>
                     requiredText(value, 'Enter your password'),
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => _submit(),
+                suffixIcon: IconButton(
+                  tooltip: _hidePassword ? 'Show password' : 'Hide password',
+                  onPressed: () =>
+                      setState(() => _hidePassword = !_hidePassword),
+                  icon: Icon(
+                    _hidePassword
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined,
+                  ),
+                ),
               ),
             ],
           ),
         ),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton(
+            onPressed: () => showForgotPasswordSheet(context, _email.text),
+            child: const Text('Forgot password?'),
+          ),
+        ),
+        const SizedBox(height: 8),
         FilledButton(onPressed: _submit, child: const Text('Sign in')),
         const SizedBox(height: 20),
         Text(
@@ -187,6 +210,95 @@ class _StaffLoginPageState extends State<StaffLoginPage> {
           child: const Text('Client? Report an issue'),
         ),
       ],
+    );
+  }
+}
+
+/// Asks for the account email and sends a reset link. Until Firebase Auth is
+/// connected it only confirms on screen.
+Future<void> showForgotPasswordSheet(BuildContext context, String email) {
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (context) => _ForgotPasswordSheet(initialEmail: email.trim()),
+  );
+}
+
+class _ForgotPasswordSheet extends StatefulWidget {
+  const _ForgotPasswordSheet({required this.initialEmail});
+
+  final String initialEmail;
+
+  @override
+  State<_ForgotPasswordSheet> createState() => _ForgotPasswordSheetState();
+}
+
+class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
+  final _form = GlobalKey<FormState>();
+  late final _email = TextEditingController(text: widget.initialEmail);
+
+  @override
+  void dispose() {
+    _email.dispose();
+    super.dispose();
+  }
+
+  void _send() {
+    if (!_form.currentState!.validate()) return;
+    final messenger = ScaffoldMessenger.of(context);
+    Navigator.of(context).pop();
+    // Same message whether or not the account exists, so the form can't be
+    // used to find out who has an account.
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text(
+          'If that email has an account, a reset link is on its way.',
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        24,
+        0,
+        24,
+        24 + MediaQuery.viewInsetsOf(context).bottom,
+      ),
+      child: Form(
+        key: _form,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('Reset your password', style: text.titleLarge),
+            const SizedBox(height: 6),
+            Text(
+              'Enter your work email and we’ll send you a link to set a new '
+              'password.',
+              style: text.bodyMedium,
+            ),
+            const SizedBox(height: 16),
+            LabelledTextField(
+              label: 'Email address',
+              hint: 'emeka@thickservices.com',
+              controller: _email,
+              keyboardType: TextInputType.emailAddress,
+              validator: emailText,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _send(),
+            ),
+            FilledButton(
+              onPressed: _send,
+              child: const Text('Send reset link'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -224,6 +336,12 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
       _focus[index - 1].requestFocus();
     }
     if (_showError) setState(() => _showError = false);
+    // Typing the last digit of a complete code verifies it straight away.
+    if (value.isNotEmpty &&
+        index == _length - 1 &&
+        _controllers.every((c) => c.text.length == 1)) {
+      _verify();
+    }
   }
 
   void _verify() {
@@ -274,6 +392,7 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
                       child: TextField(
                         controller: _controllers[i],
                         focusNode: _focus[i],
+                        autofocus: i == 0,
                         keyboardType: TextInputType.number,
                         textAlign: TextAlign.center,
                         maxLength: 1,
