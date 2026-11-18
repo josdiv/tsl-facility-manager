@@ -265,6 +265,17 @@ describe('reference data', () => {
     await assertSucceeds(updateDoc(doc(as(env, 'admin'), 'locations/marina'), { ...change, updatedBy: 'admin' }));
   });
 
+  it('lets admins save a facility before its GPS position is known', async () => {
+    const db = as(env, 'admin');
+    const facility = {
+      name: 'Idu Industrial Depot', type: 'warehouse', address: 'Plot 112', geo: null,
+      radiusM: 100, timeZone: 'Africa/Lagos', status: 'active',
+      createdAt: serverTimestamp(), createdBy: 'admin', updatedAt: serverTimestamp(), updatedBy: 'admin',
+    };
+    await assertSucceeds(setDoc(doc(db, 'locations/idu'), facility));
+    await assertFails(setDoc(doc(db, 'locations/bad'), { ...facility, geo: 'somewhere' }));
+  });
+
   it('keeps inventory stock status in step with the quantity', async () => {
     const db = as(env, 'admin');
     await assertFails(updateDoc(doc(db, 'inventory/filters'), { quantity: 3, ...stamp('admin') }));

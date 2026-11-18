@@ -53,20 +53,27 @@ class Site extends Equatable {
     required this.id,
     required this.name,
     required this.address,
-    required this.latitude,
-    required this.longitude,
     required this.radiusM,
+    this.latitude,
+    this.longitude,
   });
 
   final String id;
   final String name;
   final String address;
-  final double latitude;
-  final double longitude;
+
+  /// Null until the admin sets the facility's position.
+  final double? latitude;
+  final double? longitude;
   final double radiusM;
 
-  /// Metres from the centre of the site, on the Earth's surface.
+  bool get hasPosition => latitude != null && longitude != null;
+
+  /// Metres from the centre of the site, on the Earth's surface. Only call
+  /// when [hasPosition].
   double distanceTo(LocationFix fix) {
+    final latitude = this.latitude!;
+    final longitude = this.longitude!;
     double rad(double d) => d * math.pi / 180;
     final dLat = rad(fix.latitude - latitude);
     final dLng = rad(fix.longitude - longitude);

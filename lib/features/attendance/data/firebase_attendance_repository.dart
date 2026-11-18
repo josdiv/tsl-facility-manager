@@ -37,13 +37,13 @@ class FirebaseAttendanceRepository implements AttendanceRepository {
     if (id == null) return null;
     final data = (await _db.doc('locations/$id').get()).data();
     if (data == null) return null;
-    final geo = data['geo'] as GeoPoint;
+    final geo = data['geo'] as GeoPoint?;
     return Site(
       id: id,
       name: data['name'] as String? ?? '',
       address: data['address'] as String? ?? '',
-      latitude: geo.latitude,
-      longitude: geo.longitude,
+      latitude: geo?.latitude,
+      longitude: geo?.longitude,
       radiusM: (data['radiusM'] as num?)?.toDouble() ?? 100,
     );
   }
@@ -76,6 +76,9 @@ class FirebaseAttendanceRepository implements AttendanceRepository {
         'weak-signal' =>
           'Your GPS signal is too weak to confirm you’re on site. Move near '
               'a window or outdoors and try again.',
+        'location-not-set' =>
+          'Your facility’s location hasn’t been set up yet. Ask your '
+              'administrator to add it.',
         'mock-location' =>
           'Your location appears to come from a location-faking app. Turn it '
               'off to clock in.',

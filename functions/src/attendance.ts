@@ -36,6 +36,9 @@ export const clockIn = onCall({ region: REGION }, async (request) => {
 
   const location = (await db.doc(`locations/${user.locationId}`).get()).data();
   if (!location) throw new HttpsError('not-found', 'Your facility no longer exists.');
+  if (!location.geo) {
+    throw new HttpsError('failed-precondition', 'location-not-set');
+  }
   const geo = location.geo as GeoPoint;
   const distanceM = Math.round(distanceMetres(geo, position));
 

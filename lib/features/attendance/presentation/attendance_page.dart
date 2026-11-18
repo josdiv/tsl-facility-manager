@@ -151,8 +151,9 @@ class _LiveAttendanceState extends State<_LiveAttendance> {
     final clockedIn = since != null;
     final site = _site;
     final fix = _fix;
-    final verdict = site == null || fix == null ? null : verdictFor(site, fix);
-    final distance = site == null || fix == null
+    final located = site != null && site.hasPosition;
+    final verdict = !located || fix == null ? null : verdictFor(site, fix);
+    final distance = !located || fix == null
         ? null
         : site.distanceTo(fix).round();
     final text = Theme.of(context).textTheme;
@@ -243,6 +244,16 @@ class _LiveAttendanceState extends State<_LiveAttendance> {
         OutlinedButton(
           onPressed: _busy ? null : () => _clock(clockIn: false),
           child: const Text('Clock out'),
+        ),
+      ];
+    }
+    if (_site != null && !_site!.hasPosition) {
+      return const [
+        InfoBanner(
+          'Your facility’s location hasn’t been set up yet, so clock-in isn’t '
+          'available. Ask your administrator to add it.',
+          icon: Icons.edit_location_alt_outlined,
+          tone: BannerTone.warning,
         ),
       ];
     }

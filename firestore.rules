@@ -210,7 +210,8 @@ service cloud.firestore {
         return text(incoming().name, 1, 200)
           && incoming().type in ['office', 'warehouse', 'shopping_mall', 'residential', 'industrial', 'other']
           && text(incoming().address, 1, 500)
-          && incoming().geo is latlng
+          // Null until the admin sets the facility's position.
+          && (incoming().geo == null || incoming().geo is latlng)
           && incoming().radiusM is number && incoming().radiusM > 0 && incoming().radiusM <= 5000
           && text(incoming().timeZone, 1, 64)
           && incoming().status in ['active', 'inactive'];
