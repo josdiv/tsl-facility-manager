@@ -1,6 +1,6 @@
 import { logger } from 'firebase-functions';
 import { db, serverTime } from './common';
-import { sendPush } from './mail';
+import { sendPush } from './push';
 
 export interface Notice {
   kind: 'assigned' | 'returned' | 'sla_due' | 'submitted' | 'completed' | 'message' | 'requisition' | 'system';
@@ -34,7 +34,15 @@ export async function notify(uids: (string | null | undefined)[], notice: Notice
         logger.info(`no push devices for ${uid}; in-app notification only`);
         return;
       }
-      await sendPush(tokens, notice.title, notice.body);
+      await sendPush(uid, tokens, {
+        title: notice.title,
+        body: notice.body,
+        data: {
+          kind: notice.kind,
+          ...(notice.workOrderId ? { workOrderId: notice.workOrderId } : {}),
+          ...(notice.workOrderRef ? { workOrderRef: notice.workOrderRef } : {}),
+        },
+      });
     }),
   );
 }

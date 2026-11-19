@@ -41,8 +41,10 @@ class SessionCubit extends Cubit<SessionState> {
               ? const SessionState(SessionStatus.signedOut)
               : SessionState(SessionStatus.signedIn, user),
         );
-        // Register this device for the signed-in person's pushes.
-        if (user != null) unawaited(_push?.bind(user));
+        // Register this device for the signed-in person's pushes. Not while
+        // signing out: a late profile update (e.g. from clocking out) would
+        // register the device again for the person leaving.
+        if (user != null && !_signingOut) unawaited(_push?.bind(user));
       });
     }
   }
@@ -50,17 +52,23 @@ class SessionCubit extends Cubit<SessionState> {
   final AuthRepository _auth;
   final PushService? _push;
   StreamSubscription<UserProfile?>? _subscription;
+  var _signingOut = false;
 
   /// Signs out and, when sign-in is enforced, waits until the session has
   /// caught up, so the caller can navigate without the router bouncing it.
   Future<void> signOut() async {
-    // While still signed in, so the device's token can be removed.
-    await _push?.unbind();
-    await _auth.signOut();
-    if (state.status == SessionStatus.signedIn) {
-      await stream
-          .firstWhere((s) => s.status != SessionStatus.signedIn)
-          .timeout(const Duration(seconds: 5), onTimeout: () => state);
+    _signingOut = true;
+    try {
+      // While still signed in, so the device's token can be removed.
+      await _push?.unbind();
+      await _auth.signOut();
+      if (state.status == SessionStatus.signedIn) {
+        await stream
+            .firstWhere((s) => s.status != SessionStatus.signedIn)
+            .timeout(const Duration(seconds: 5), onTimeout: () => state);
+      }
+    } finally {
+      _signingOut = false;
     }
   }
 

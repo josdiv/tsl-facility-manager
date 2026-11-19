@@ -10,9 +10,10 @@ import '../../../core/firebase/firebase_env.dart';
 import '../../profile/domain/user_profile.dart';
 import '../domain/notifications.dart';
 
-/// Firebase Cloud Messaging, set up the way SpotLat does it. Pushes are sent
-/// by Cloud Functions through the company push API; this side registers the
-/// device and shows what arrives.
+/// Firebase Cloud Messaging. Cloud Functions send notification messages
+/// (functions/src/push.ts), which the phone shows itself while the app is in
+/// the background or closed; this side registers the device and shows
+/// messages that arrive while the app is open.
 class FcmPushService implements PushService {
   FcmPushService({FirebaseMessaging? messaging, FirebaseFirestore? firestore})
     : _messaging = messaging ?? FirebaseMessaging.instance,
@@ -121,7 +122,7 @@ class FcmPushService implements PushService {
   }
 
   Future<void> _showForeground(RemoteMessage message) async {
-    // The company push API sends "title\nbody" as one message, so split it.
+    // Older pushes came as one "title\nbody" data message; split those.
     final raw =
         message.notification?.body ??
         message.data['message'] as String? ??
