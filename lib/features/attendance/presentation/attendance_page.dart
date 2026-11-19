@@ -1,6 +1,10 @@
+import 'dart:io';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../../core/router/app_routes.dart';
 import '../../../core/session/app_role.dart';
@@ -183,7 +187,11 @@ class _LiveAttendanceState extends State<_LiveAttendance> {
           style: text.bodyMedium,
         ),
         const SizedBox(height: 16),
-        _GeofenceMap(inside: verdict == GpsVerdict.inside),
+        _GeofenceMap(
+          inside: verdict == GpsVerdict.inside,
+          site: site,
+          fix: fix,
+        ),
         const SizedBox(height: 12),
         AppCard(
           child: Column(
@@ -437,41 +445,169 @@ class _PreviewBody extends StatelessWidget {
   }
 }
 
+/// The facility's boundary and the person's position on a Google map, when
+/// the facility has a position. Otherwise, and in tests, a simple drawing.
 class _GeofenceMap extends StatelessWidget {
-  const _GeofenceMap({required this.inside});
+  const _GeofenceMap({required this.inside, this.site, this.fix});
 
   final bool inside;
+  final Site? site;
+  final LocationFix? fix;
+
+  /// Google Maps needs a platform view and, on iOS, a key set up in
+  /// AppDelegate, which isn't done yet.
+  static final _canShowMap =
+      Platform.isAndroid && !Platform.environment.containsKey('FLUTTER_TEST');
 
   @override
   Widget build(BuildContext context) {
     final color = inside ? AppColors.teal : AppColors.danger;
+    final site = this.site;
     return Semantics(
       label: inside
           ? 'Map: you are inside the geofence'
           : 'Map: you are not confirmed inside the geofence',
-      child: Container(
-        height: 170,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(12),
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFFE3EEEC), Color(0xFFEDE7F0)],
-          ),
-        ),
-        child: Center(
-          child: Container(
-            width: 112,
-            height: 112,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: color.withValues(alpha: 0.12),
-              border: Border.all(color: color),
-            ),
-            child: Icon(Icons.location_on, color: color, size: 32),
-          ),
-        ),
+      child: _canShowMap && site != null && site.hasPosition
+          ? ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: SizedBox(
+                height: 220,
+                child: _SiteMap(site: site, fix: fix, color: color),
+              ),
+            )
+          : _drawing(color),
+    );
+  }
+
+  Widget _drawing(Color color) => Container(
+    height: 170,
+    decoration: BoxDecoration(
+      borderRadius: BorderRadius.circular(12),
+      gradient: const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFFE3EEEC), Color(0xFFEDE7F0)],
       ),
+    ),
+    child: Center(
+      child: Container(
+        width: 112,
+        height: 112,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: color.withValues(alpha: 0.12),
+          border: Border.all(color: color),
+        ),
+        child: Icon(Icons.location_on, color: color, size: 32),
+      ),
+    ),
+  );
+}
+
+class _SiteMap extends StatefulWidget {
+  const _SiteMap({required this.site, required this.fix, required this.color});
+
+  final Site site;
+  final LocationFix? fix;
+  final Color color;
+
+  @override
+  State<_SiteMap> createState() => _SiteMapState();
+}
+
+class _SiteMapState extends State<_SiteMap> {
+  GoogleMapController? _map;
+
+  LatLng get _centre => LatLng(widget.site.latitude!, widget.site.longitude!);
+
+  /// The boundary circle, plus the person when there's a reading.
+  LatLngBounds get _bounds {
+    final centre = _centre;
+    final radius = widget.site.radiusM;
+    final dLat = radius / 111320;
+    final dLng = radius / (111320 * math.cos(centre.latitude * math.pi / 180));
+    var south = centre.latitude - dLat, north = centre.latitude + dLat;
+    var west = centre.longitude - dLng, east = centre.longitude + dLng;
+    final fix = widget.fix;
+    if (fix != null) {
+      south = math.min(south, fix.latitude);
+      north = math.max(north, fix.latitude);
+      west = math.min(west, fix.longitude);
+      east = math.max(east, fix.longitude);
+    }
+    return LatLngBounds(
+      southwest: LatLng(south, west),
+      northeast: LatLng(north, east),
+    );
+  }
+
+  void _frame() =>
+      _map?.animateCamera(CameraUpdate.newLatLngBounds(_bounds, 32));
+
+  @override
+  void didUpdateWidget(_SiteMap old) {
+    super.didUpdateWidget(old);
+    if (old.fix != widget.fix || old.site != widget.site) _frame();
+  }
+
+  @override
+  void dispose() {
+    _map?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fix = widget.fix;
+    return GoogleMap(
+      initialCameraPosition: CameraPosition(target: _centre, zoom: 17),
+      onMapCreated: (controller) {
+        _map = controller;
+        // Wait a frame so the map knows its size before fitting the bounds.
+        WidgetsBinding.instance.addPostFrameCallback((_) => _frame());
+      },
+      zoomControlsEnabled: false,
+      myLocationButtonEnabled: false,
+      mapToolbarEnabled: false,
+      compassEnabled: false,
+      rotateGesturesEnabled: false,
+      tiltGesturesEnabled: false,
+      circles: {
+        Circle(
+          circleId: const CircleId('site'),
+          center: _centre,
+          radius: widget.site.radiusM,
+          fillColor: widget.color.withValues(alpha: 0.12),
+          strokeColor: widget.color,
+          strokeWidth: 2,
+        ),
+        if (fix != null)
+          Circle(
+            circleId: const CircleId('accuracy'),
+            center: LatLng(fix.latitude, fix.longitude),
+            radius: fix.accuracyM,
+            fillColor: AppColors.primary.withValues(alpha: 0.10),
+            strokeColor: AppColors.primary.withValues(alpha: 0.4),
+            strokeWidth: 1,
+          ),
+      },
+      markers: {
+        Marker(
+          markerId: const MarkerId('site'),
+          position: _centre,
+          infoWindow: InfoWindow(title: widget.site.name),
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRose),
+        ),
+        if (fix != null)
+          Marker(
+            markerId: const MarkerId('you'),
+            position: LatLng(fix.latitude, fix.longitude),
+            infoWindow: const InfoWindow(title: 'You'),
+            icon: BitmapDescriptor.defaultMarkerWithHue(
+              BitmapDescriptor.hueAzure,
+            ),
+          ),
+      },
     );
   }
 }
