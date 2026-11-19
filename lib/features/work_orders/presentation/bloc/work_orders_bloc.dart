@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:equatable/equatable.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/utils/streams.dart';
@@ -17,10 +20,14 @@ class WorkOrdersRequested extends WorkOrdersEvent {
 
 /// Applies a lifecycle change, such as starting or confirming, to one order.
 class WorkOrderChanged extends WorkOrdersEvent {
-  const WorkOrderChanged(this.id, this.change);
+  const WorkOrderChanged(this.id, this.change, {this.done});
 
   final String id;
   final WorkOrder Function(WorkOrder order, DateTime now) change;
+
+  /// Completes with whether the change was saved. On failure the state's
+  /// [WorkOrdersState.failure] says why.
+  final Completer<bool>? done;
 }
 
 class IssueReported extends WorkOrdersEvent {
@@ -116,14 +123,18 @@ class WorkOrdersBloc extends Bloc<WorkOrdersEvent, WorkOrdersState> {
     Emitter<WorkOrdersState> emit,
   ) async {
     final order = state.byId(event.id);
-    if (order == null) return;
+    var saved = false;
     try {
+      if (order == null) return;
       await _repository.update(order, event.change(order, _clock()));
+      saved = true;
     } on WorkOrderFailure catch (failure) {
       emit(state.copyWith(failure: failure));
     } on StateError catch (error) {
       // The order moved on before this change, e.g. someone else returned it.
       emit(state.copyWith(failure: WorkOrderFailure(error.message)));
+    } finally {
+      event.done?.complete(saved);
     }
   }
 
@@ -137,5 +148,19 @@ class WorkOrdersBloc extends Bloc<WorkOrdersEvent, WorkOrdersState> {
     } on WorkOrderFailure catch (failure) {
       emit(state.copyWith(failure: failure));
     }
+  }
+}
+
+/// Saving a work order change from a page.
+extension SaveWorkOrder on BuildContext {
+  /// Applies [change] to work order [id] and waits until it is saved.
+  /// Returns false if it wasn't; the failure is in the bloc's state.
+  Future<bool> saveWorkOrder(
+    String id,
+    WorkOrder Function(WorkOrder order, DateTime now) change,
+  ) {
+    final done = Completer<bool>();
+    read<WorkOrdersBloc>().add(WorkOrderChanged(id, change, done: done));
+    return done.future;
   }
 }

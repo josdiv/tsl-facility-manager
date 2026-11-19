@@ -239,6 +239,7 @@ class _ReviewInspectPageState extends State<ReviewInspectPage> {
   final _ticked = <String>{};
   final _notes = TextEditingController();
   var _media = const <String>[];
+  var _saving = false;
 
   @override
   void dispose() {
@@ -246,24 +247,26 @@ class _ReviewInspectPageState extends State<ReviewInspectPage> {
     super.dispose();
   }
 
-  void _confirm() {
+  Future<void> _confirm() async {
     final note = _notes.text.trim();
     final checks = [
       for (final check in _checks)
         if (_ticked.contains(check)) check,
     ];
     final media = _media;
-    context.read<WorkOrdersBloc>().add(
-      WorkOrderChanged(
-        widget.id,
-        (order, now) => order.confirm(
-          at: now,
-          inspectionNote: note.isEmpty ? null : note,
-          checks: checks,
-          media: media,
-        ),
+    setState(() => _saving = true);
+    final saved = await context.saveWorkOrder(
+      widget.id,
+      (order, now) => order.confirm(
+        at: now,
+        inspectionNote: note.isEmpty ? null : note,
+        checks: checks,
+        media: media,
       ),
     );
+    if (!mounted) return;
+    setState(() => _saving = false);
+    if (!saved) return;
     _toast(context, '${widget.id} confirmed and closed');
     context.go(AppRoutes.supervisorReview);
   }
@@ -407,9 +410,9 @@ class _ReviewInspectPageState extends State<ReviewInspectPage> {
               ),
               FilledButton.icon(
                 style: FilledButton.styleFrom(backgroundColor: AppColors.teal),
-                onPressed: canConfirm ? _confirm : null,
+                onPressed: canConfirm && !_saving ? _confirm : null,
                 icon: const Icon(Icons.check),
-                label: const Text('Confirm & close'),
+                label: Text(_saving ? 'Saving…' : 'Confirm & close'),
               ),
               const SizedBox(height: 8),
               OutlinedButton.icon(
@@ -485,6 +488,7 @@ class _ReturnWithEvidencePageState extends State<ReturnWithEvidencePage> {
   var _reason = _reasons.first;
   var _media = const <String>[];
   TeamMember? _returnTo;
+  var _saving = false;
 
   @override
   void dispose() {
@@ -492,26 +496,28 @@ class _ReturnWithEvidencePageState extends State<ReturnWithEvidencePage> {
     super.dispose();
   }
 
-  void _submit(TeamMember? defaultAssignee) {
+  Future<void> _submit(TeamMember? defaultAssignee) async {
     if (!_form.currentState!.validate()) return;
     final assignee = _returnTo ?? defaultAssignee;
     if (assignee == null) return;
     final reason = _reason;
     final feedback = _feedback.text.trim();
     final media = _media;
-    context.read<WorkOrdersBloc>().add(
-      WorkOrderChanged(
-        widget.id,
-        (order, now) => order.returnForCorrection(
-          reason: reason,
-          feedback: feedback,
-          media: media,
-          assignee: assignee.name,
-          assigneeId: assignee.uid,
-          at: now,
-        ),
+    setState(() => _saving = true);
+    final saved = await context.saveWorkOrder(
+      widget.id,
+      (order, now) => order.returnForCorrection(
+        reason: reason,
+        feedback: feedback,
+        media: media,
+        assignee: assignee.name,
+        assigneeId: assignee.uid,
+        at: now,
       ),
     );
+    if (!mounted) return;
+    setState(() => _saving = false);
+    if (!saved) return;
     _toast(context, 'Returned to ${assignee.name} · editing unlocked');
     context.go(AppRoutes.supervisorReview);
   }
@@ -589,8 +595,8 @@ class _ReturnWithEvidencePageState extends State<ReturnWithEvidencePage> {
                         foregroundColor: AppColors.danger,
                         backgroundColor: AppColors.dangerSoft,
                       ),
-                      onPressed: () => _submit(current),
-                      child: const Text('Return work order'),
+                      onPressed: _saving ? null : () => _submit(current),
+                      child: Text(_saving ? 'Saving…' : 'Return work order'),
                     ),
                   ],
                 ),
@@ -615,6 +621,7 @@ class ReassignTaskPage extends StatefulWidget {
 class _ReassignTaskPageState extends State<ReassignTaskPage> {
   String? _selected;
   final _note = TextEditingController();
+  var _saving = false;
 
   @override
   void dispose() {
@@ -622,19 +629,21 @@ class _ReassignTaskPageState extends State<ReassignTaskPage> {
     super.dispose();
   }
 
-  void _submit(TeamMember person) {
+  Future<void> _submit(TeamMember person) async {
     final note = _note.text.trim();
-    context.read<WorkOrdersBloc>().add(
-      WorkOrderChanged(
-        widget.id,
-        (order, now) => order.reassign(
-          assignee: person.name,
-          assigneeId: person.uid,
-          at: now,
-          note: note.isEmpty ? null : note,
-        ),
+    setState(() => _saving = true);
+    final saved = await context.saveWorkOrder(
+      widget.id,
+      (order, now) => order.reassign(
+        assignee: person.name,
+        assigneeId: person.uid,
+        at: now,
+        note: note.isEmpty ? null : note,
       ),
     );
+    if (!mounted) return;
+    setState(() => _saving = false);
+    if (!saved) return;
     _toast(context, 'Assigned to ${person.name} · notification sent');
     // Back to the work order, which now shows the new technician.
     if (context.canPop()) {
@@ -711,7 +720,9 @@ class _ReassignTaskPageState extends State<ReassignTaskPage> {
                 maxLines: 3,
               ),
               FilledButton(
-                onPressed: selected == null ? null : () => _submit(selected),
+                onPressed: selected == null || _saving
+                    ? null
+                    : () => _submit(selected),
                 child: Text(
                   order.assignee == null
                       ? 'Assign & notify'

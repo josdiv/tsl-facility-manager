@@ -204,6 +204,7 @@ class _TaskEvidencePageState extends State<TaskEvidencePage> {
   final _note = TextEditingController();
   var _media = const <String>[];
   var _showMediaError = false;
+  var _saving = false;
 
   @override
   void dispose() {
@@ -211,18 +212,21 @@ class _TaskEvidencePageState extends State<TaskEvidencePage> {
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     final formValid = _form.currentState!.validate();
     setState(() => _showMediaError = _media.isEmpty);
     if (!formValid || _media.isEmpty) return;
     final note = _note.text.trim();
     final media = _media;
-    context.read<WorkOrdersBloc>().add(
-      WorkOrderChanged(
-        widget.id,
-        (order, now) => order.submit(note: note, media: media, at: now),
-      ),
+    setState(() => _saving = true);
+    // Photos upload first, so wait: on failure the work stays here to retry.
+    final saved = await context.saveWorkOrder(
+      widget.id,
+      (order, now) => order.submit(note: note, media: media, at: now),
     );
+    if (!mounted) return;
+    setState(() => _saving = false);
+    if (!saved) return;
     context.pushReplacement(
       AppRoutes.staffSubmission(widget.id, justSubmitted: true),
     );
@@ -368,9 +372,9 @@ class _TaskEvidencePageState extends State<TaskEvidencePage> {
                 ),
               ),
             FilledButton.icon(
-              onPressed: _submit,
+              onPressed: _saving ? null : _submit,
               icon: const Icon(Icons.check),
-              label: const Text('Mark as done & submit'),
+              label: Text(_saving ? 'Submitting…' : 'Mark as done & submit'),
             ),
           ],
         ),
