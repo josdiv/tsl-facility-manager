@@ -16,13 +16,13 @@ import {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** Up to [max] Storage paths, all under workOrders/{id}/{kind}/. */
-function photoPaths(value: unknown, workOrderId: string, kind: string, max: number): string[] {
+/** Up to [max] Storage paths, all under locations/{locationId}/workOrders/{id}/{kind}/. */
+function photoPaths(value: unknown, locationId: string, workOrderId: string, kind: string, max: number): string[] {
   if (value == null) return [];
   if (!Array.isArray(value) || value.length > max) {
     throw new HttpsError('invalid-argument', `Add up to ${max} photos.`);
   }
-  const prefix = `workOrders/${workOrderId}/${kind}/`;
+  const prefix = `locations/${locationId}/workOrders/${workOrderId}/${kind}/`;
   for (const path of value) {
     if (typeof path !== 'string' || !path.startsWith(prefix) || path.slice(prefix.length).includes('/')) {
       throw new HttpsError('invalid-argument', 'A photo is in the wrong place.');
@@ -47,7 +47,7 @@ export const reportIssue = onCall({ region: REGION }, async (request) => {
   const description = text(data.description, 'Description', 1, 4000);
   const locationId = text(data.locationId, 'Location', 1, 128);
   const zoneId = text(data.zoneId, 'Zone', 1, 128);
-  const reportPhotos = photoPaths(data.photos, workOrderId, 'report', 4);
+  const reportPhotos = photoPaths(data.photos, locationId, workOrderId, 'report', 4);
 
   const companyRef = db.doc(`companies/${user.companyId}`);
   const usageRef = companyRef.collection('usage').doc(lagosMonth());

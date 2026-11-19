@@ -101,20 +101,25 @@ service cloud.firestore {
       return value is int && value >= min;
     }
 
-    // A list of at most `max` (up to 6) Storage paths under
-    // workOrders/{id}/{kind}/. Rules can't loop, so each slot is checked.
-    function photoPath(path, id, kind) {
-      return path is string && path.matches('workOrders/' + id + '/' + kind + '/[^/]+');
+    // A list of at most `max` (up to 6) Storage paths directly under
+    // `prefix`. Rules can't loop, so each slot is checked.
+    function photoPath(path, prefix) {
+      return path is string && path.matches(prefix + '[^/]+');
     }
 
-    function photoList(list, id, kind, max) {
+    function photoList(list, prefix, max) {
       return list is list && list.size() <= max
-        && (list.size() < 1 || photoPath(list[0], id, kind))
-        && (list.size() < 2 || photoPath(list[1], id, kind))
-        && (list.size() < 3 || photoPath(list[2], id, kind))
-        && (list.size() < 4 || photoPath(list[3], id, kind))
-        && (list.size() < 5 || photoPath(list[4], id, kind))
-        && (list.size() < 6 || photoPath(list[5], id, kind));
+        && (list.size() < 1 || photoPath(list[0], prefix))
+        && (list.size() < 2 || photoPath(list[1], prefix))
+        && (list.size() < 3 || photoPath(list[2], prefix))
+        && (list.size() < 4 || photoPath(list[3], prefix))
+        && (list.size() < 5 || photoPath(list[4], prefix))
+        && (list.size() < 6 || photoPath(list[5], prefix));
+    }
+
+    // Where a work order's photos of one kind are stored.
+    function photoFolder(order, id, kind) {
+      return 'locations/' + order.locationId + '/workOrders/' + id + '/' + kind + '/';
     }
 
     // ---------------------------------------------------------------- users
@@ -256,7 +261,7 @@ service cloud.firestore {
           && text(incoming().title, 1, 200)
           && incoming().category in ['compliance', 'manual', 'contract', 'report', 'other']
           && incoming().filePath is string
-          && incoming().filePath.matches('documents/' + documentId + '/[^/]+');
+          && incoming().filePath.matches('locations/' + incoming().locationId + '/documents/' + documentId + '/[^/]+');
       }
     }
 
@@ -352,7 +357,7 @@ service cloud.firestore {
           && moves(['in_progress', 'returned'], 'pending_review')
           && only(['status', 'workNote', 'workPhotos', 'submittedAt'])
           && text(incoming().workNote, 1, 4000)
-          && photoList(incoming().workPhotos, workOrderId, 'work', 6)
+          && photoList(incoming().workPhotos, photoFolder(current(), workOrderId, 'work'), 6)
           && incoming().workPhotos.size() >= 1
           && incoming().submittedAt == request.time;
       }
@@ -364,7 +369,7 @@ service cloud.firestore {
           && incoming().inspectionChecks is list && incoming().inspectionChecks.size() <= 10
           && optionalText(optionalField(incoming(), 'inspectionNote'), 4000)
           && (optionalField(incoming(), 'inspectionPhotos') == null
-              || photoList(incoming().inspectionPhotos, workOrderId, 'inspection', 4))
+              || photoList(incoming().inspectionPhotos, photoFolder(current(), workOrderId, 'inspection'), 4))
           && incoming().completedAt == request.time;
       }
 
@@ -376,7 +381,7 @@ service cloud.firestore {
           && incoming().returnReason in ['incomplete_finishing', 'not_satisfactory',
                                          'safety_concern', 'wrong_resolution']
           && text(incoming().returnFeedback, 1, 4000)
-          && photoList(incoming().returnPhotos, workOrderId, 'return', 4)
+          && photoList(incoming().returnPhotos, photoFolder(current(), workOrderId, 'return'), 4)
           && incoming().returnedAt == request.time
           && (!changedKeys().hasAny(['assignedToId', 'assignedToName']) || validAssignee());
       }

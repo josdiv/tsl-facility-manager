@@ -11,6 +11,7 @@ if (!process.env.FIRESTORE_EMULATOR_HOST || !process.env.FIREBASE_AUTH_EMULATOR_
 }
 
 import { GeoPoint, Timestamp } from 'firebase-admin/firestore';
+import { syncClaims } from './claims';
 import { auth, db, lagosMonth } from './common';
 
 const now = Date.now();
@@ -160,7 +161,7 @@ async function main() {
       supervisorId: o.locationId === 'test-site' ? 'testlead' : 'sarah',
       supervisorName: o.locationId === 'test-site' ? 'Test Lead' : 'Sarah James', assignmentNote: null,
       dueAt: hours(o.due), reportPhotos: [], startedAt: o.status === 'in_progress' ? hours(-3) : null,
-      workNote: o.workNote ?? null, workPhotos: o.workNote ? [`workOrders/${o.id}/work/after.jpg`] : [],
+      workNote: o.workNote ?? null, workPhotos: o.workNote ? [`locations/${o.locationId ?? 'marina'}/workOrders/${o.id}/work/after.jpg`] : [],
       submittedAt: o.submittedAt != null ? hours(o.submittedAt) : null,
       returnReason: null, returnFeedback: null, returnPhotos: [], returnedAt: null,
       inspectionChecks: o.status === 'completed' ? ['Unit operating correctly', 'Area clean and safe', 'Evidence meets requirements'] : [],
@@ -200,6 +201,8 @@ async function main() {
   batch.set(db.doc(`companies/acme/usage/${lagosMonth()}`), { workOrderCount: 4 });
 
   await batch.commit();
+  // Triggers are off while seeding, so set the Storage claims here.
+  for (const uid of Object.keys(people)) await syncClaims(uid);
   console.log(`Seeded ${Object.keys(people).length} users, ${orders.length} work orders. Staff password: ${PASSWORD}`);
 }
 

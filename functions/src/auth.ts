@@ -2,6 +2,7 @@ import { createHash, randomInt } from 'node:crypto';
 import { Timestamp } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
+import { syncClaims } from './claims';
 import { sendMail } from './mail';
 import {
   auth,
@@ -110,7 +111,9 @@ export const verifyEmailCode = onCall({ region: REGION }, async (request) => {
   await requireActiveCompany(user.companyId);
 
   await db.doc(`users/${uid}`).update({ lastLoginAt: serverTime() });
-  return { token: await auth.createCustomToken(uid, { role: user.role }) };
+  // Storage rules read these claims; set them before the first sign-in.
+  await syncClaims(uid, user);
+  return { token: await auth.createCustomToken(uid) };
 });
 
 /**

@@ -37,7 +37,9 @@ void main() {
       'workPhotos',
       'submittedAt',
     });
-    expect(changes['workPhotos'], ['workOrders/abc123/work/after.jpg']);
+    expect(changes['workPhotos'], [
+      'locations/marina/workOrders/abc123/work/after.jpg',
+    ]);
   });
 
   test('confirm sends the checklist, note and inspection photos', () {
@@ -57,7 +59,7 @@ void main() {
       'completedAt',
     });
     expect(changes['inspectionPhotos'], [
-      'workOrders/abc123/inspection/closed.jpg',
+      'locations/marina/workOrders/abc123/inspection/closed.jpg',
     ]);
   });
 

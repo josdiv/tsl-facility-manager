@@ -30,21 +30,37 @@ class FirestoreWorkOrderRepository implements WorkOrderRepository {
   final FirebaseFunctions _functions;
   final FirebaseAuth _auth;
 
-  /// Uploads any photos still on the phone to workOrders/{docId}/{kind}/ and
-  /// returns the list with their Storage paths.
+  /// Uploads any photos still on the phone to
+  /// locations/{locationId}/workOrders/{docId}/{kind}/ and returns the list
+  /// with their Storage paths.
   Future<List<String>> _upload(
+    String? locationId,
     String docId,
     String kind,
     List<String> photos,
   ) async {
+    if (!photos.any(isLocalPhoto)) return photos;
+    if (locationId == null) {
+      throw const WorkOrderFailure(
+        'This task has no facility, so photos can’t be added.',
+      );
+    }
     final stamp = DateTime.now().millisecondsSinceEpoch;
     try {
+      // Storage checks the facility in the sign-in token, so make sure the
+      // token is current before the first upload.
+      await _auth.currentUser?.getIdToken(true);
       return [
         for (final (i, photo) in photos.indexed)
           isLocalPhoto(photo)
               ? await _photos.upload(
                   photo,
-                  photoPath(docId, kind, '${stamp}_$i.${_extension(photo)}'),
+                  photoPath(
+                    locationId,
+                    docId,
+                    kind,
+                    '${stamp}_$i.${_extension(photo)}',
+                  ),
                 )
               : photo,
       ];
@@ -127,9 +143,19 @@ class FirestoreWorkOrderRepository implements WorkOrderRepository {
     // New photos go up first: Storage only accepts them while the order is
     // still in the status before this change.
     final uploaded = after.withMedia(
-      work: await _upload(docId, 'work', after.workMedia),
-      returned: await _upload(docId, 'return', after.returnMedia),
-      inspection: await _upload(docId, 'inspection', after.inspectionMedia),
+      work: await _upload(after.locationId, docId, 'work', after.workMedia),
+      returned: await _upload(
+        after.locationId,
+        docId,
+        'return',
+        after.returnMedia,
+      ),
+      inspection: await _upload(
+        after.locationId,
+        docId,
+        'inspection',
+        after.inspectionMedia,
+      ),
     );
     final changes = workOrderChanges(before, uploaded, docId: docId);
     if (changes.isEmpty) return;
@@ -152,7 +178,8 @@ class FirestoreWorkOrderRepository implements WorkOrderRepository {
   Future<String> report(IssueDraft draft, UserProfile client) async {
     // The ID is chosen here so photos can be uploaded under it first.
     final docId = _orders.doc().id;
-    final photos = await _upload(docId, 'report', draft.media);
+    final locationId = draft.location.id;
+    final photos = await _upload(locationId, docId, 'report', draft.media);
     try {
       final result = await _functions
           .httpsCallable('reportIssue')
@@ -163,7 +190,8 @@ class FirestoreWorkOrderRepository implements WorkOrderRepository {
             'locationId': draft.location.id,
             'zoneId': draft.zone.id,
             'photos': [
-              for (final photo in photos) photoPath(docId, 'report', photo),
+              for (final photo in photos)
+                photoPath(locationId, docId, 'report', photo),
             ],
           });
       final ref = (result.data as Map)['ref'] as String;
@@ -236,8 +264,10 @@ const returnReasonCodes = {
 };
 
 /// Storage path for a photo. Already-stored photos keep their path.
-String photoPath(String docId, String kind, String photo) =>
-    photo.startsWith('workOrders/') ? photo : 'workOrders/$docId/$kind/$photo';
+String photoPath(String? locationId, String docId, String kind, String photo) =>
+    photo.startsWith('locations/')
+    ? photo
+    : 'locations/$locationId/workOrders/$docId/$kind/$photo';
 
 List<String> _paths(Object? paths) => [
   for (final path in (paths as List?) ?? const []) path as String,
@@ -329,7 +359,7 @@ Map<String, Object?> workOrderChanges(
   final now = FieldValue.serverTimestamp();
   final changes = <String, Object?>{};
   List<String> photos(String kind, List<String> names) => [
-    for (final name in names) photoPath(docId, kind, name),
+    for (final name in names) photoPath(after.locationId, docId, kind, name),
   ];
 
   if (before.status != after.status) {

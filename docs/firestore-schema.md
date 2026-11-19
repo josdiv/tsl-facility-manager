@@ -21,7 +21,7 @@ in [`tool/firebase_rules_test`](../tool/firebase_rules_test).
 | Time of day | Only for recurring schedules: `"HH:mm"` text, 24-hour, read in the location's `timeZone` |
 | Coordinates | Firestore `geopoint` |
 | Money and counts | `number` (integers unless stated) |
-| Files | Cloud Storage path as text, for example `workOrders/abc123/report/1700000000.jpg`. Never a download URL |
+| Files | Cloud Storage path as text, for example `locations/marina/workOrders/abc123/report/1700000000.jpg`. Never a download URL |
 | References | `<thing>Id` holds the document ID. A matching `<thing>Name` copy is kept for display (see [Copied names](#copied-names)) |
 | Audit | Every top-level document has `createdAt`, `createdBy` (uid or `"system"`), `updatedAt` and `updatedBy` |
 | Optional fields | Leave them out or set `null`. Don't use empty strings |
@@ -172,7 +172,7 @@ Files attached to a location, such as SOPs and certificates.
 | `title` | string | |
 | `category` | enum | `compliance`, `manual`, `contract`, `report`, `other` |
 | `description` | string \| null | |
-| `filePath` | string | Storage path under `documents/{documentId}/` |
+| `filePath` | string | Storage path under `locations/{locationId}/documents/{documentId}/` |
 | `fileName` | string | Original file name, for display |
 | `contentType` | string | For example `application/pdf` |
 | `sizeBytes` | number | |
@@ -413,14 +413,31 @@ belong to an `active` company.
 
 | Path | Who uploads | Who reads |
 | --- | --- | --- |
-| `workOrders/{id}/report/{file}` | The client, before calling `reportIssue` (the app picks the new work order ID) | Anyone who can read the work order |
-| `workOrders/{id}/work/{file}` | The assigned staff member | Same |
-| `workOrders/{id}/return/{file}` | A supervisor at the location, while the work is pending review | Same |
-| `workOrders/{id}/inspection/{file}` | A supervisor at the location, while the work is pending review | Same |
-| `documents/{documentId}/{file}` | Admin | Staff and supervisors at the location, and admins |
-| `inventory/{itemId}/{file}` | Admin | Staff and supervisors, and admins |
+| `locations/{locationId}/workOrders/{id}/report/{file}` | A client of a company using the location, before calling `reportIssue` (the app picks the new work order ID) | Admins, and staff, supervisors and clients at the location |
+| `locations/{locationId}/workOrders/{id}/work/{file}` | Staff at the location | Same |
+| `locations/{locationId}/workOrders/{id}/return/{file}` | Supervisors at the location | Same |
+| `locations/{locationId}/workOrders/{id}/inspection/{file}` | Supervisors at the location | Same |
+| `locations/{locationId}/documents/{documentId}/{file}` | Admin | Staff and supervisors at the location, and admins |
+| `inventory/{itemId}/{file}` | Admin | Staff, supervisors and admins |
 
-Work order photos must be images under 10 MB. Documents can be up to 25 MB.
+`{locationId}` is the work order's or document's `locationId`. Work order
+photos must be images under 10 MB, and files are never overwritten. Documents
+can be up to 25 MB.
+
+Storage rules can't read the `tsl-app` database (only `(default)`), so they
+check the person's sign-in token instead. The `onUserAccessChange` and
+`onCompanyAccessChange` functions keep these custom claims up to date:
+
+| Claim | Value |
+| --- | --- |
+| `role` | `admin`, `supervisor`, `staff` or `client` |
+| `active` | `true` when the user is `active` and, for a client, their company is too |
+| `locs` | Location IDs: a staff member's or supervisor's `locationId`, or all of a client's company `locationIds` |
+
+A new token picks up changed claims. The app refreshes its token before
+uploading. The dashboard should do the same, with `getIdToken(true)`.
+Firestore rules decide which photos may be attached to a work order, and
+when.
 
 ## Cloud Functions
 
@@ -438,11 +455,15 @@ Work order photos must be images under 10 MB. Documents can be up to 25 MB.
 | `onRequisitionCreated` | Trigger | Numbers the request (`REQ-`) and notifies the facility's supervisors |
 | `assignAssetRef` / `assignInventoryRef` | Trigger | Give new assets and stock items their `AST-` / `SKU-` refs |
 | `onUserNameChange` | Trigger | Updates copied names (see below) |
+| `onUserAccessChange` / `onCompanyAccessChange` | Trigger | Keep the Storage token claims (`role`, `active`, `locs`) in step with the user and their company |
 | `onSlaScheduleWrite` | Trigger | Sets `nextRunAt` when a schedule is created or switched back on |
 | `runSlaSchedules` | Scheduled, every 15 minutes | Creates each SLA work order 12 hours before it's due, notifies the technician, and moves `nextRunAt` on |
 
-Notifications go to `users/{uid}/notifications` and, as a push, through the
-company push API to every token in `users/{uid}/fcmTokens`.
+Notifications go to `users/{uid}/notifications` and, as a push through
+Firebase Cloud Messaging, to every token in `users/{uid}/fcmTokens`. Pushes
+are notification messages on the Android channel `tsl.default`, with `kind`,
+`workOrderId` and `workOrderRef` as data. Tokens FCM reports as gone are
+deleted.
 
 ## Copied names
 

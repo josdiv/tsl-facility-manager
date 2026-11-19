@@ -167,4 +167,17 @@ export async function seed(env) {
 }
 
 export const as = (env, uid) => env.authenticatedContext(uid).firestore();
-export const storageAs = (env, uid) => env.authenticatedContext(uid).storage();
+const companies = { acme: { status: 'active', locationIds: ['marina', 'harbour'] }, shut: { status: 'locked', locationIds: ['marina'] } };
+
+/** The token claims functions/src/claims.ts gives each seeded person. */
+export function claimsOf(uid) {
+  const p = people[uid];
+  const company = p.role === 'client' ? companies[p.companyId] : null;
+  return {
+    role: p.role,
+    active: (p.status ?? 'active') === 'active' && (!company || company.status === 'active'),
+    locs: company ? company.locationIds : p.locationId ? [p.locationId] : [],
+  };
+}
+
+export const storageAs = (env, uid) => env.authenticatedContext(uid, claimsOf(uid)).storage();

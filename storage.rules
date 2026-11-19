@@ -1,21 +1,36 @@
 rules_version = '2';
 
 // TSL Facility Manager Cloud Storage rules. Paths and limits are described in
-// docs/firestore-schema.md ("Cloud Storage layout"). Access follows the
-// matching Firestore documents in the app's tsl-app database, so these rules
-// read Firestore.
+// docs/firestore-schema.md ("Cloud Storage layout").
+//
+// Storage rules can only read the (default) Firestore database, not the app's
+// tsl-app database, so they read nothing from Firestore. What they need about
+// the person is in their sign-in token, kept up to date by the
+// onUserAccessChange and onCompanyAccessChange functions:
+//   role    admin | supervisor | staff | client
+//   active  account (and a client's company) is active
+//   locs    location IDs they work at, or their company's locations
+// The location is part of each path. Which photos end up on a work order, and
+// at which status, is checked by firestore.rules when the paths are saved.
 
 service firebase.storage {
   match /b/{bucket}/o {
 
-    function me() {
-      return firestore.get(/databases/tsl-app/documents/users/$(request.auth.uid)).data;
+    function active() {
+      return request.auth != null && request.auth.token.active == true;
     }
 
-    function active() {
-      return request.auth != null
-        && firestore.exists(/databases/tsl-app/documents/users/$(request.auth.uid))
-        && me().status == 'active';
+    function role() {
+      return request.auth.token.role;
+    }
+
+    function admin() {
+      return active() && role() == 'admin';
+    }
+
+    function at(locationId) {
+      return active() && request.auth.token.locs is list
+        && locationId in request.auth.token.locs;
     }
 
     function image(maxMb) {
@@ -23,63 +38,34 @@ service firebase.storage {
         && request.resource.contentType.matches('image/(jpeg|png|webp|heic|heif)');
     }
 
-    function canReadWorkOrder(order) {
-      return me().role == 'admin'
-        || (me().role == 'client' && order.clientId == request.auth.uid)
-        || (me().role == 'staff' && order.assignedToId == request.auth.uid)
-        || (me().role == 'supervisor' && order.locationId == me().locationId);
-    }
-
-    match /workOrders/{workOrderId}/{kind}/{fileName} {
-      function order() {
-        return firestore.get(/databases/tsl-app/documents/workOrders/$(workOrderId)).data;
-      }
-
-      function orderExists() {
-        return firestore.exists(/databases/tsl-app/documents/workOrders/$(workOrderId));
-      }
-
-      allow read: if active()
-        && kind in ['report', 'work', 'return', 'inspection']
-        && orderExists()
-        && canReadWorkOrder(order());
+    match /locations/{locationId}/workOrders/{workOrderId}/{kind}/{fileName} {
+      allow read: if kind in ['report', 'work', 'return', 'inspection']
+        && (admin() || at(locationId));
 
       // Files are never replaced or deleted by the app. Cleanup of photos
       // that never got attached is done by a Cloud Function.
       allow update, delete: if false;
 
-      allow create: if active() && image(10) && (
-        // A client uploads report photos just before calling reportIssue,
-        // using the work order ID the app picked.
-        (kind == 'report' && me().role == 'client' && !orderExists())
-        // The technician uploads proof while the task is in their hands.
-        || (kind == 'work' && orderExists()
-            && me().role == 'staff'
-            && order().assignedToId == request.auth.uid
-            && order().status in ['in_progress', 'returned'])
-        // The supervisor uploads evidence when returning or confirming the
-        // work.
-        || (kind in ['return', 'inspection'] && orderExists()
-            && me().role == 'supervisor'
-            && order().locationId == me().locationId
-            && order().status == 'pending_review')
+      allow create: if resource == null && at(locationId) && image(10) && (
+        // A client, just before calling reportIssue.
+        (kind == 'report' && role() == 'client')
+        // Staff, for proof of work.
+        || (kind == 'work' && role() == 'staff')
+        // Supervisors, when returning or confirming work.
+        || (kind in ['return', 'inspection'] && role() == 'supervisor')
       );
     }
 
-    match /documents/{documentId}/{fileName} {
-      allow read: if active() && (
-        me().role == 'admin'
-        || (me().role in ['staff', 'supervisor']
-            && firestore.get(/databases/tsl-app/documents/documents/$(documentId)).data.locationId == me().locationId)
-      );
-      allow write: if active() && me().role == 'admin'
+    match /locations/{locationId}/documents/{documentId}/{fileName} {
+      allow read: if admin()
+        || (at(locationId) && role() in ['staff', 'supervisor']);
+      allow write: if admin()
         && (request.resource == null || request.resource.size < 25 * 1024 * 1024);
     }
 
     match /inventory/{itemId}/{fileName} {
-      allow read: if active() && me().role in ['admin', 'staff', 'supervisor'];
-      allow write: if active() && me().role == 'admin'
-        && (request.resource == null || image(10));
+      allow read: if active() && role() in ['admin', 'staff', 'supervisor'];
+      allow write: if admin() && (request.resource == null || image(10));
     }
 
     match /{allPaths=**} {

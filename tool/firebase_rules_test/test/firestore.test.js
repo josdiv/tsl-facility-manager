@@ -92,7 +92,7 @@ describe('work order lifecycle', () => {
     await assertSucceeds(updateDoc(doc(as(env, 'emeka'), 'workOrders/working'), {
       status: 'pending_review',
       workNote: 'Recharged refrigerant, unit cooling.',
-      workPhotos: ['workOrders/working/work/after-1.jpg', 'workOrders/working/work/after-2.jpg'],
+      workPhotos: ['locations/marina/workOrders/working/work/after-1.jpg', 'locations/marina/workOrders/working/work/after-2.jpg'],
       submittedAt: serverTimestamp(),
       ...stamp('emeka'),
     }));
@@ -100,12 +100,14 @@ describe('work order lifecycle', () => {
 
   it('refuses a submission with bad or missing photos, no note, or from the wrong status', async () => {
     const submit = (id, extra) => updateDoc(doc(as(env, 'emeka'), `workOrders/${id}`), {
-      status: 'pending_review', workNote: 'Done', workPhotos: [`workOrders/${id}/work/after.jpg`],
+      status: 'pending_review', workNote: 'Done', workPhotos: [`locations/marina/workOrders/${id}/work/after.jpg`],
       submittedAt: serverTimestamp(), ...stamp('emeka'), ...extra,
     });
     await assertFails(submit('working', { workPhotos: [] }));
-    await assertFails(submit('working', { workPhotos: ['workOrders/open/work/stolen.jpg'] }));
-    await assertFails(submit('working', { workPhotos: Array.from({ length: 7 }, (_, i) => `workOrders/working/work/${i}.jpg`) }));
+    await assertFails(submit('working', { workPhotos: ['locations/marina/workOrders/open/work/stolen.jpg'] }));
+    await assertFails(submit('working', { workPhotos: ['locations/cedar/workOrders/working/work/elsewhere.jpg'] }));
+    await assertFails(submit('working', { workPhotos: ['workOrders/working/work/old-layout.jpg'] }));
+    await assertFails(submit('working', { workPhotos: Array.from({ length: 7 }, (_, i) => `locations/marina/workOrders/working/work/${i}.jpg`) }));
     await assertFails(submit('working', { workNote: '' }));
     await assertFails(submit('open', {}));
     await assertFails(submit('review', {}));
@@ -122,7 +124,7 @@ describe('work order lifecycle', () => {
       status: 'completed',
       inspectionChecks: ['Unit operating correctly', 'Area clean and safe'],
       inspectionNote: 'All good.',
-      inspectionPhotos: ['workOrders/review/inspection/closed-panel.jpg'],
+      inspectionPhotos: ['locations/marina/workOrders/review/inspection/closed-panel.jpg'],
       completedAt: serverTimestamp(),
       ...stamp('sarah'),
     }));
@@ -134,7 +136,7 @@ describe('work order lifecycle', () => {
   it('only accepts inspection photos from the inspection folder', async () => {
     await assertFails(updateDoc(doc(as(env, 'sarah'), 'workOrders/review'), {
       status: 'completed', inspectionChecks: [], completedAt: serverTimestamp(),
-      inspectionPhotos: ['workOrders/review/work/borrowed.jpg'], ...stamp('sarah'),
+      inspectionPhotos: ['locations/marina/workOrders/review/work/borrowed.jpg'], ...stamp('sarah'),
     }));
   });
 
@@ -143,7 +145,7 @@ describe('work order lifecycle', () => {
       status: 'returned',
       returnReason: 'incomplete_finishing',
       returnFeedback: 'Panel cover not refitted.',
-      returnPhotos: ['workOrders/review/return/cover.jpg'],
+      returnPhotos: ['locations/marina/workOrders/review/return/cover.jpg'],
       returnedAt: serverTimestamp(),
       ...stamp('sarah'),
       ...extra,
@@ -158,7 +160,7 @@ describe('work order lifecycle', () => {
   it('lets the assignee resubmit returned work', async () => {
     await env.withSecurityRulesDisabled((c) => updateDoc(doc(c.firestore(), 'workOrders/working'), { status: 'returned' }));
     await assertSucceeds(updateDoc(doc(as(env, 'emeka'), 'workOrders/working'), {
-      status: 'pending_review', workNote: 'Fixed the cover.', workPhotos: ['workOrders/working/work/cover-on.jpg'], submittedAt: serverTimestamp(), ...stamp('emeka'),
+      status: 'pending_review', workNote: 'Fixed the cover.', workPhotos: ['locations/marina/workOrders/working/work/cover-on.jpg'], submittedAt: serverTimestamp(), ...stamp('emeka'),
     }));
   });
 

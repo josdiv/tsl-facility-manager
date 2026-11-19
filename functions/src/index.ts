@@ -4,6 +4,7 @@
  */
 export { createUser, sendEmailCode, verifyEmailCode } from './auth';
 export { clockIn, clockOut } from './attendance';
+export { onCompanyAccessChange, onUserAccessChange } from './claims';
 export {
   actionRequisition,
   assignAssetRef,
