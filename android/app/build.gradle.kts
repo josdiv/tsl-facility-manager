@@ -70,6 +70,12 @@ android {
         release {
             signingConfig = signingConfigs.findByName("release")
                 ?: signingConfigs.getByName("debug")
+            // R8 code shrinking breaks Cloud Functions calls in release
+            // builds: every call failed on the phone without reaching the
+            // server ("We couldn't reach the server"). Off until a keep rule
+            // is found; the APK is about 7 MB bigger.
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }
