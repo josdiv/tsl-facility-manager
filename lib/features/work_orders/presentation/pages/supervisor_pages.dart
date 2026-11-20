@@ -145,20 +145,6 @@ class SupervisorHomePage extends StatelessWidget {
             actionLabel: 'Inspect',
             onTap: () => context.push(AppRoutes.supervisorOrder(order.id)),
           ),
-        AppCard(
-          onTap: () => context.go(AppRoutes.supervisorAlerts),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Upcoming SLA reminder', style: text.titleMedium),
-              const SizedBox(height: 6),
-              Text(
-                'Fire extinguisher inspection · All floors',
-                style: text.bodyMedium,
-              ),
-            ],
-          ),
-        ),
       ],
     );
   }
