@@ -24,6 +24,7 @@ import '../../domain/work_order.dart';
 import '../bloc/work_orders_bloc.dart';
 import '../widgets/work_order_card.dart';
 import '../widgets/work_order_scope.dart';
+import '../widgets/inspection_card.dart';
 
 class StaffHomePage extends StatelessWidget {
   const StaffHomePage({super.key});
@@ -556,6 +557,7 @@ class SubmissionPage extends StatelessWidget {
                     ],
                   ),
                 ),
+              InspectionCard(order),
               OutlinedButton(
                 onPressed: () => context.go(AppRoutes.staffTasks),
                 child: const Text('Back to my tasks'),

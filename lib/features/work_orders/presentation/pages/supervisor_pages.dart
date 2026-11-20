@@ -25,6 +25,7 @@ import '../../domain/work_order_repository.dart';
 import '../bloc/work_orders_bloc.dart';
 import '../widgets/work_order_card.dart';
 import '../widgets/work_order_scope.dart';
+import '../widgets/inspection_card.dart';
 
 /// The supervisor's staff at their facility, kept up to date.
 class TeamBuilder extends StatefulWidget {
@@ -365,6 +366,7 @@ class _ReviewInspectPageState extends State<ReviewInspectPage> {
                 ],
               ),
             ),
+            InspectionCard(order),
             if (order.isAwaitingReview) ...[
               AppCard(
                 padding: const EdgeInsets.fromLTRB(16, 16, 8, 8),

@@ -25,6 +25,7 @@ import '../../domain/work_order_repository.dart';
 import '../bloc/work_orders_bloc.dart';
 import '../widgets/work_order_card.dart';
 import '../widgets/work_order_scope.dart';
+import '../widgets/inspection_card.dart';
 
 class ClientHomePage extends StatelessWidget {
   const ClientHomePage({super.key});
@@ -462,6 +463,7 @@ class RequestTrackingPage extends StatelessWidget {
                 ],
               ),
             ),
+            InspectionCard(order),
             if (order.reportMedia.isNotEmpty)
               AppCard(
                 child: Column(
