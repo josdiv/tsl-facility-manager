@@ -1,19 +1,7 @@
 import { GeoPoint } from 'firebase-admin/firestore';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
 import { db, distanceMetres, REGION, requireUser, serverTime } from './common';
-
-/** GPS readings less precise than this can't confirm someone is on site. */
-const MAX_ACCURACY_M = 50;
-
-function readPosition(data: unknown) {
-  const { latitude, longitude, accuracyM } = (data ?? {}) as Record<string, unknown>;
-  const ok = (v: unknown, min: number, max: number): v is number =>
-    typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max;
-  if (!ok(latitude, -90, 90) || !ok(longitude, -180, 180) || !ok(accuracyM, 0, 100000)) {
-    throw new HttpsError('invalid-argument', 'We couldn’t read your location.');
-  }
-  return { latitude, longitude, accuracyM };
-}
+import { readPosition, requireOnSite } from './geofence';
 
 async function openShift(uid: string) {
   const snap = await db
@@ -40,23 +28,7 @@ export const clockIn = onCall({ region: REGION }, async (request) => {
     throw new HttpsError('failed-precondition', 'location-not-set');
   }
   const geo = location.geo as GeoPoint;
-  const distanceM = Math.round(distanceMetres(geo, position));
-
-  // Android flags readings from fake-GPS apps. The flag is self-reported, so
-  // it stops casual cheating rather than a determined one.
-  if (request.data?.isMocked === true) {
-    throw new HttpsError('failed-precondition', 'mock-location');
-  }
-  // A vague reading is still decisive when its whole error margin is outside.
-  if (distanceM - position.accuracyM > location.radiusM) {
-    throw new HttpsError('failed-precondition', 'outside-geofence', { distanceM, radiusM: location.radiusM });
-  }
-  if (position.accuracyM > MAX_ACCURACY_M) {
-    throw new HttpsError('failed-precondition', 'weak-signal', { distanceM, accuracyM: position.accuracyM });
-  }
-  if (distanceM > location.radiusM) {
-    throw new HttpsError('failed-precondition', 'outside-geofence', { distanceM, radiusM: location.radiusM });
-  }
+  const distanceM = requireOnSite(geo, location.radiusM, position, request.data?.isMocked);
   if (await openShift(uid)) throw new HttpsError('already-exists', 'You’re already clocked in.');
 
   const now = serverTime();

@@ -1,6 +1,7 @@
-import { Timestamp } from 'firebase-admin/firestore';
+import { GeoPoint, Timestamp } from 'firebase-admin/firestore';
 import { onDocumentCreated, onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
+import { readPosition, requireOnSite } from './geofence';
 import { notify, supervisorsOf } from './notify';
 import {
   DATABASE_ID,
@@ -48,6 +49,8 @@ export const reportIssue = onCall({ region: REGION }, async (request) => {
   const locationId = text(data.locationId, 'Location', 1, 128);
   const zoneId = text(data.zoneId, 'Zone', 1, 128);
   const reportPhotos = photoPaths(data.photos, locationId, workOrderId, 'report', 4);
+  // Clients report from the facility itself, which keeps out spam reports.
+  const position = readPosition(data.position);
 
   const companyRef = db.doc(`companies/${user.companyId}`);
   const usageRef = companyRef.collection('usage').doc(lagosMonth());
@@ -76,6 +79,12 @@ export const reportIssue = onCall({ region: REGION }, async (request) => {
 
     // Transactions must finish every read before the first write.
     const locationData = location.data()!;
+    // A facility without a position yet can't be checked; the report is
+    // allowed and its distance left empty.
+    const geo = locationData.geo as GeoPoint | null;
+    const distanceM = geo
+      ? requireOnSite(geo, locationData.radiusM, position, data.position?.isMocked)
+      : null;
     const supervisor = locationData.siteManagerId
       ? (await tx.get(db.doc(`users/${locationData.siteManagerId}`))).data()
       : undefined;
@@ -109,6 +118,9 @@ export const reportIssue = onCall({ region: REGION }, async (request) => {
       assignmentNote: null,
       dueAt: Timestamp.fromMillis(now.toMillis() + DAY_MS),
       reportPhotos,
+      reportGeo: new GeoPoint(position.latitude, position.longitude),
+      reportDistanceM: distanceM,
+      reportAccuracyM: Math.round(position.accuracyM),
       workPhotos: [],
       returnPhotos: [],
       inspectionChecks: [],

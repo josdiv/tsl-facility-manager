@@ -227,6 +227,9 @@ limit.
 | `assignmentNote` | string \| null | Up to 1,000 characters. The supervisor's note to the technician when reassigning, for example `Overdue, please do this first` |
 | `dueAt` | timestamp | |
 | `reportPhotos` | array&lt;string&gt; | Storage paths. Up to 4. From the person who reported it |
+| `reportGeo` | geopoint \| null | Where the client's phone was when they reported it. Null for SLA and dashboard work |
+| `reportDistanceM` | number \| null | Metres from the facility at the time. Null when the facility had no position yet |
+| `reportAccuracyM` | number \| null | GPS accuracy of that reading, in metres |
 | `startedAt` | timestamp \| null | |
 | `workNote` | string \| null | The technician's update when submitting |
 | `workPhotos` | array&lt;string&gt; | 1 to 6 when submitting. Proof of completed work |
@@ -446,7 +449,7 @@ when.
 | `sendEmailCode` | Callable | Emails a 6-digit code to a client through the company mail API. Stores only a hash in `emailCodes`. One email a minute |
 | `verifyEmailCode` | Callable | Checks the code (5 tries, 10 minutes) and returns a Firebase custom token for the app to sign in with |
 | `createUser` | Callable, admin | Creates the Auth account and the `users` document. Emails staff a password-setup link |
-| `reportIssue` | Callable, client | Checks the company status and monthly limit, assigns the `WO-` ref and creates the work order |
+| `reportIssue` | Callable, client | Checks the company status and monthly limit, and that the client's phone is inside the facility's geofence (same rules as clock-in; skipped while the facility has no position), assigns the `WO-` ref and creates the work order |
 | `createWorkOrder` | Callable, admin | Creates a work order from the dashboard, with the next `WO-` ref and copied names |
 | `clockIn` / `clockOut` | Callable, staff and supervisor | Checks the distance to the facility and writes `attendance` and `users.onShift`. Refuses fake-GPS readings |
 | `actionRequisition` | Callable, admin | Approves or rejects a requisition. Approving changes the stock and `stockStatus` in the same transaction |

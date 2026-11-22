@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/firebase/firebase_env.dart';
 import '../../../core/media/photo_service.dart';
 import '../../../core/session/app_role.dart';
+import '../../attendance/domain/attendance.dart';
 import '../../profile/domain/user_profile.dart';
 import '../domain/work_order.dart';
 import '../domain/work_order_repository.dart';
@@ -17,15 +18,18 @@ import '../domain/work_order_repository.dart';
 class FirestoreWorkOrderRepository implements WorkOrderRepository {
   FirestoreWorkOrderRepository({
     required PhotoService photos,
+    required LocationService location,
     FirebaseFirestore? firestore,
     FirebaseFunctions? functions,
     FirebaseAuth? auth,
   }) : _photos = photos,
+       _location = location,
        _db = firestore ?? appFirestore(),
        _functions = functions ?? appFunctions(),
        _auth = auth ?? FirebaseAuth.instance;
 
   final PhotoService _photos;
+  final LocationService _location;
   final FirebaseFirestore _db;
   final FirebaseFunctions _functions;
   final FirebaseAuth _auth;
@@ -176,6 +180,9 @@ class FirestoreWorkOrderRepository implements WorkOrderRepository {
 
   @override
   Future<String> report(IssueDraft draft, UserProfile client) async {
+    // Reports are only accepted from the facility itself, so read the
+    // location first, before any photo is uploaded.
+    final fix = await _reportLocation();
     // The ID is chosen here so photos can be uploaded under it first.
     final docId = _orders.doc().id;
     final locationId = draft.location.id;
@@ -193,6 +200,12 @@ class FirestoreWorkOrderRepository implements WorkOrderRepository {
               for (final photo in photos)
                 photoPath(locationId, docId, 'report', photo),
             ],
+            'position': {
+              'latitude': fix.latitude,
+              'longitude': fix.longitude,
+              'accuracyM': fix.accuracyM,
+              'isMocked': fix.isMocked,
+            },
           });
       final ref = (result.data as Map)['ref'] as String;
       _docIds[ref] = docId;
@@ -204,10 +217,44 @@ class FirestoreWorkOrderRepository implements WorkOrderRepository {
           code: 'monthly-limit',
         );
       }
-      throw WorkOrderFailure(
-        e.code == 'unavailable' || e.code == 'internal'
-            ? 'We couldn’t send your request. Check your connection.'
-            : e.message ?? 'We couldn’t send your request.',
+      final details = e.details is Map ? e.details as Map : const {};
+      final distance = details['distanceM'];
+      throw WorkOrderFailure(switch (e.message) {
+        'outside-geofence' =>
+          'You’re ${distance is num ? distanceLabel(distance) : 'too far'} '
+              'from ${draft.location.name}. You can only report an issue '
+              'while you’re at the facility.',
+        'weak-signal' =>
+          'Your GPS signal is too weak to confirm you’re at the facility. '
+              'Move near a window or outdoors and try again.',
+        'mock-location' =>
+          'Your location appears to come from a location-faking app. Turn it '
+              'off to report an issue.',
+        _ when e.code == 'unavailable' || e.code == 'internal' =>
+          'We couldn’t send your request. Check your connection.',
+        _ => e.message ?? 'We couldn’t send your request.',
+      }, code: e.message == 'outside-geofence' ? 'outside-geofence' : null);
+    }
+  }
+
+  /// The phone's location for a report, or a failure saying how to fix it.
+  Future<LocationFix> _reportLocation() async {
+    try {
+      await _location.ensurePermission();
+      return await _location.currentFix();
+    } on LocationUnavailable catch (e) {
+      throw WorkOrderFailure(switch (e.problem) {
+        LocationProblem.serviceOff =>
+          'Turn on your phone’s location so we can confirm you’re at the '
+              'facility, then try again.',
+        _ =>
+          'Allow TSL Facility Manager to use your location. Reports can only '
+              'be sent from the facility.',
+      });
+    } on Object {
+      throw const WorkOrderFailure(
+        'We couldn’t read your location. Move near a window or outdoors and '
+        'try again.',
       );
     }
   }

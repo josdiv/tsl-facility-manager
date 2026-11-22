@@ -36,7 +36,9 @@ void configureDependencies({bool useFirebase = false}) {
   if (useFirebase) {
     sl
       ..registerLazySingleton<PhotoService>(FirebasePhotoService.new)
-      ..registerLazySingleton(() => FirestoreWorkOrderRepository(photos: sl()))
+      ..registerLazySingleton(
+        () => FirestoreWorkOrderRepository(photos: sl(), location: sl()),
+      )
       ..registerLazySingleton<WorkOrderRepository>(
         sl<FirestoreWorkOrderRepository>,
       )
