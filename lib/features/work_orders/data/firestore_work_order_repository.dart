@@ -344,7 +344,11 @@ WorkOrder? workOrderFromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     locationId: d['locationId'] as String?,
     zoneId: d['zoneId'] as String?,
     due: _date(d['dueAt']) ?? DateTime.now(),
-    submittedBy: d['clientName'] as String? ?? 'SLA schedule',
+    submittedBy:
+        d['clientName'] as String? ??
+        (d['createdBy'] == 'admin-sync' && d['type'] != 'sla'
+            ? 'Admin dashboard'
+            : 'SLA schedule'),
     submittedById: d['clientId'] as String?,
     assignee: d['assignedToName'] as String?,
     assigneeId: d['assignedToId'] as String?,

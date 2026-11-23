@@ -38,6 +38,7 @@ process.on('exit', () => fs.rmSync(dir, { recursive: true, force: true }));
 // Set up the app before the functions code, which reuses it.
 initializeApp({ projectId: PROJECT, credential: applicationDefault() });
 const { adminDb, BRIDGED, syncAdminRecord } = require(path.join(__dirname, '../functions/lib/bridge/sync.js'));
+const { pullWorkOrder } = require(path.join(__dirname, '../functions/lib/bridge/shared.js'));
 
 // Facilities and staff first, so names can be filled in as records arrive.
 const ORDER = ['location', 'staff', 'zone', 'assets', 'inventory', 'documents', 'client', 'sla_schedules'];
@@ -55,6 +56,16 @@ async function main() {
         const verb = APPLY ? s.action : `would ${s.action}`;
         console.log(`  ${verb.padEnd(16)} ${s.target}${s.detail ? `  (${s.detail})` : ''}`);
       }
+    }
+  }
+  // Then the dashboard's existing work orders, now that people and places exist.
+  const orders = await adminDb.collection('work_order').get();
+  console.log(`\n## work_order (${orders.size})`);
+  for (const doc of orders.docs) {
+    for (const s of await pullWorkOrder(doc.id, undefined, doc.data(), { apply: APPLY })) {
+      totals[s.action] = (totals[s.action] ?? 0) + 1;
+      if (s.action === 'unchanged') continue;
+      console.log(`  ${(APPLY ? s.action : `would ${s.action}`).padEnd(16)} ${s.target}${s.detail ? `  (${s.detail})` : ''}`);
     }
   }
   console.log(`\n${APPLY ? 'Done' : 'Dry run, nothing written'}: ${Object.entries(totals).map(([k, n]) => `${n} ${k}`).join(', ')}`);

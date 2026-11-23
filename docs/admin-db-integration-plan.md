@@ -1,8 +1,40 @@
 # Plan: connecting the app to the admin database
 
-Status, 23 November 2026: steps 1 and 2 are built and tested on the
-emulators, but not switched on in the live project. The questions at the end
-are still open.
+Status, 23 November 2026: **the bridge is live.** Steps 1 and 2 were switched
+on and the dashboard's data copied across (step 3), then every work order
+status was tested with the dashboard and the app side by side. Most of the
+questions at the end are still open.
+
+## Live since 23 November 2026
+
+- `BRIDGE_ENABLED=true` in `functions/.env`. Set it to `false` and redeploy
+  the functions to pause syncing.
+- **Statuses:** the dashboard's status menu moves the job in the app
+  (agreed: the app follows the dashboard). The app's "returned" is the
+  dashboard's "Rejected".
+- **Tested live:**
+  - a dashboard job reached the technician's phone with its photo
+  - GPS clock-in showed in the dashboard's attendance
+  - Start → In Progress, submit with photo → Pending Review, and the admin's
+    Completed, each reached the other side within seconds
+  - the admin's status menu (In Progress, Pending Review, Open, Completed)
+    and Reassign, with push notifications
+  - test passwords set in the dashboard sign in to the app
+- **Fixed during the switch-over:** an older copy of a job could reach the
+  dashboard last, which set two completed dashboard jobs back to Open. They
+  were restored. The bridge now copies a job's current state, and dashboard
+  jobs are created in their final status in one write.
+- **For the dashboard developer:**
+  - The new-job form needs a photo. Without one it says "created
+    successfully" and saves nothing.
+  - The due time can't be earlier than the current time of day, even for a
+    later date.
+  - "Updates & conversation" doesn't show the app's history entries
+    (`workorder_status` with `STAT_app_` IDs).
+  - Deleting an open job doesn't cancel the app's copy, and the dashboard has
+    no Cancel status.
+- **Not tested yet:** a supervisor in the app rejecting work (needs a
+  supervisor's test login).
 
 ## Progress
 

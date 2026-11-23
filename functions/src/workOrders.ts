@@ -200,13 +200,14 @@ export const onWorkOrderWrite = onDocumentWritten(
         ...base,
         kind,
         note:
-          kind === 'returned'
+          // A step taken in the dashboard has no note.
+          (kind === 'returned'
             ? after.returnFeedback
             : kind === 'confirmed'
-              ? after.inspectionNote ?? null
+              ? after.inspectionNote
               : kind === 'submitted'
                 ? after.workNote
-                : null,
+                : null) ?? null,
         photos:
           kind === 'returned'
             ? after.returnPhotos ?? []

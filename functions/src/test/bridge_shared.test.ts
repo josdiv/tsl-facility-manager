@@ -45,7 +45,11 @@ test('an app work order in the dashboard’s format', () => {
 test('the dashboard’s work order read back for the app', () => {
   const w = fromAdminWorkOrder({ ...toAdminWorkOrder(order, []).fields, status: 'Cancelled', priority: 'High' });
   assert.equal(w.priority, 'high');
-  assert.equal(w.cancelled, true);
+  assert.equal(w.status, 'cancelled');
+  assert.equal(fromAdminWorkOrder({ status: 'In Progress' }).status, 'in_progress');
+  assert.equal(fromAdminWorkOrder({ status: 'Pending Review' }).status, 'pending_review');
+  assert.equal(fromAdminWorkOrder({ status: 'Rejected' }).status, 'returned');
+  assert.equal(fromAdminWorkOrder({ status: 'Something else' }).status, null);
   assert.equal(w.assetId, null);
   assert.equal(w.dueAt!.toMillis(), Date.parse('2026-11-23T13:05:00Z'));
   assert.equal(fromAdminWorkOrder({ type: 'SLA' }).type, 'sla');

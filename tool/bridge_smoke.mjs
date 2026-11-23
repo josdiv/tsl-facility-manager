@@ -220,6 +220,33 @@ assert.equal((await appDoc('requisitions/rq1')).actionedByName, 'Sup Four');
 await until('requester told', async () => (await tsl.collection('users/staff_t6/notifications').where('kind', '==', 'requisition').get()).size > 0);
 ok('a parts request goes to the dashboard, and its approval comes back with a notification');
 
+// The dashboard's status menu moves the job in the app.
+await admin.doc('work_order/WO-777002').set({ workOrderId: 'WO-777002', title: 'Fix the gate', description: 'Hinge', type: 'Client', priority: 'Medium', status: 'Open', locationId: 'loc_t2', assetId: '', assignedTo: 'staff_t6', supervisedBy: 'staff_t4', dueDate: '2026-12-02', dueTime: '09:00', attachments: [], createdAt: now, createdBy: 'Admin' });
+await until('second dashboard job', () => appDoc('workOrders/WO-777002'));
+for (const [label, status, stamp] of [['In Progress', 'in_progress', 'startedAt'], ['Pending Review', 'pending_review', 'submittedAt'], ['Rejected', 'returned', 'returnedAt'], ['Completed', 'completed', 'completedAt']]) {
+  await admin.doc('work_order/WO-777002').update({ status: label });
+  const moved = await until(`${label} in the app`, async () => { const o = await appDoc('workOrders/WO-777002'); return o.status === status && o; });
+  assert.ok(moved[stamp], `${stamp} set`);
+}
+for (const kind of ['started', 'submitted', 'returned']) {
+  await until(`${kind} in the timeline`, async () => (await tsl.collection('workOrders/WO-777002/events').where('kind', '==', kind).get()).size > 0);
+}
+const confirmed = await until('dashboard step in the timeline', async () => (await tsl.collection('workOrders/WO-777002/events').where('kind', '==', 'confirmed').get()).docs[0]?.data());
+assert.equal(confirmed.actorName, 'Admin dashboard');
+await new Promise((r) => setTimeout(r, 3000));
+assert.equal((await admin.doc('work_order/WO-777002').get()).data().status, 'Completed', 'no echo reverted it');
+ok('the dashboard’s status menu moves the job in the app: In Progress, Pending Review, Rejected, Completed');
+
+// A job that's already done in the dashboard stays done on both sides
+// (a stale "open" copy once overwrote the dashboard: 23 Nov 2026).
+await admin.doc('work_order/WO-777003').set({ workOrderId: 'WO-777003', title: 'Old finished job', description: 'Done last week', type: 'Client', priority: 'Low', status: 'Completed', locationId: 'loc_t2', assetId: '', assignedTo: 'staff_t6', supervisedBy: 'staff_t4', dueDate: '2026-11-19', dueTime: '14:06', attachments: [], createdAt: now, createdBy: 'Admin' });
+const done = await until('finished job in the app', () => appDoc('workOrders/WO-777003'));
+assert.equal(done.status, 'completed');
+assert.ok(done.completedAt);
+await new Promise((r) => setTimeout(r, 6000));
+assert.equal((await admin.doc('work_order/WO-777003').get()).data().status, 'Completed', 'the dashboard still says Completed');
+ok('a job already completed in the dashboard arrives completed and stays Completed there');
+
 // Cancelling in the dashboard.
 await admin.doc('work_order/WO-777001').update({ status: 'Cancelled' });
 await until('cancelled in the app', async () => (await appDoc('workOrders/WO-777001')).status === 'cancelled');

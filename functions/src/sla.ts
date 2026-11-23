@@ -91,6 +91,8 @@ export interface NewOrder {
   docId?: string;
   ref?: string;
   reportPhotos?: string[];
+  /** Defaults to open. */
+  status?: string;
   type: 'client' | 'sla';
   title: string;
   description: string;
@@ -125,13 +127,15 @@ export async function createOrder(tx: FirebaseFirestore.Transaction, order: NewO
   const ref = order.docId ? db.doc(`workOrders/${order.docId}`) : db.collection('workOrders').doc();
   const woRef = order.ref ?? `WO-${await nextNumber(tx, 'workOrders', 1001)}`;
   const now = Timestamp.now();
+  const stamped = STAMP_FOR_STATUS[order.status ?? 'open'];
   tx.set(ref, {
+    ...(stamped ? { [stamped]: now } : {}),
     ref: woRef,
     type: order.type,
     title: order.title,
     description: order.description,
     priority: order.priority,
-    status: 'open',
+    status: order.status ?? 'open',
     locationId: order.locationId,
     locationName: location.name,
     zoneId,
@@ -163,6 +167,14 @@ export async function createOrder(tx: FirebaseFirestore.Transaction, order: NewO
   });
   return { id: ref.id, ref: woRef };
 }
+
+/** When a job entered a status, for jobs created already past "open". */
+const STAMP_FOR_STATUS: Record<string, string> = {
+  in_progress: 'startedAt',
+  pending_review: 'submittedAt',
+  returned: 'returnedAt',
+  completed: 'completedAt',
+};
 
 /** Admin only: a work order raised from the dashboard. */
 export const createWorkOrder = onCall({ region: REGION }, async (request) => {

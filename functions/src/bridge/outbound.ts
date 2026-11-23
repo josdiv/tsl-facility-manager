@@ -33,7 +33,8 @@ export const STATUS_TO_ADMIN: Record<string, string> = {
   open: 'Open',
   in_progress: 'In Progress',
   pending_review: 'Pending Review',
-  returned: 'Returned',
+  // The dashboard's word for work sent back for correction.
+  returned: 'Rejected',
   completed: 'Completed',
   cancelled: 'Cancelled',
 };
@@ -223,10 +224,31 @@ export function fromAdminRequisitionDecision(r: AdminDoc, deciderName: string | 
 
 // ------------------------------------------- dashboard work order edits
 
+/** The dashboard's status names in the app's terms. */
+export const STATUS_FROM_ADMIN: Record<string, string> = {
+  'open': 'open',
+  'assigned': 'open',
+  'in progress': 'in_progress',
+  'pending review': 'pending_review',
+  'completed': 'completed',
+  'rejected': 'returned',
+  'returned': 'returned',
+  'cancelled': 'cancelled',
+  'canceled': 'cancelled',
+};
+
+/** When the app's job entered each status, set when the dashboard moves it. */
+export const STATUS_TIMESTAMP: Record<string, string> = {
+  in_progress: 'startedAt',
+  pending_review: 'submittedAt',
+  returned: 'returnedAt',
+  completed: 'completedAt',
+};
+
 /**
  * The fields of an app work order the dashboard may change, from its copy:
- * wording, priority, due time, people, facility and asset, and cancelling.
- * Progress (start, submit, inspect) only ever comes from the app.
+ * wording, priority, due time, people, asset and status. The dashboard's
+ * status menu moves the job in the app too (agreed 23 Nov 2026).
  */
 export function fromAdminWorkOrder(w: AdminDoc) {
   const priority = String(w.priority ?? '').toLowerCase();
@@ -240,7 +262,7 @@ export function fromAdminWorkOrder(w: AdminDoc) {
     locationId: typeof w.locationId === 'string' && w.locationId ? w.locationId : null,
     assetId: typeof w.assetId === 'string' && w.assetId ? w.assetId : null,
     type: String(w.type ?? '').toLowerCase() === 'sla' ? ('sla' as const) : ('client' as const),
-    cancelled: String(w.status ?? '').toLowerCase() === 'cancelled',
+    status: STATUS_FROM_ADMIN[String(w.status ?? '').trim().toLowerCase()] ?? null,
     attachments: Array.isArray(w.attachments) ? w.attachments.filter((x): x is string => typeof x === 'string') : [],
   };
 }

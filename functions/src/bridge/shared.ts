@@ -26,6 +26,7 @@ import {
   fromAdminRequisitionDecision,
   fromAdminWorkOrder,
   sameMinute,
+  STATUS_TIMESTAMP,
   toAdminAttendance,
   toAdminMessage,
   toAdminRequisition,
@@ -113,9 +114,13 @@ export async function pushWorkOrder(o: AdminDoc, opts: SyncOptions): Promise<Ste
 export const pushWorkOrderToAdmin = onDocumentWritten(
   { document: 'workOrders/{id}', database: DATABASE_ID, region: REGION },
   async (event) => {
-    const after = event.data?.after.data();
-    if (!enabled() || !after) return;
-    logSteps('workOrders', event.params.id, await pushWorkOrder(after, APPLY));
+    if (!enabled() || !event.data?.after.exists) return;
+    // The job as it is now, not as it was when this trigger fired: triggers
+    // can run out of order, and an older copy must never reach the dashboard
+    // last.
+    const current = (await db.doc(`workOrders/${event.params.id}`).get()).data();
+    if (!current) return;
+    logSteps('workOrders', event.params.id, await pushWorkOrder(current, APPLY));
   },
 );
 
@@ -147,8 +152,9 @@ export const pushMessageToAdmin = onDocumentCreated(
 export const pushAttendanceToAdmin = onDocumentWritten(
   { document: 'attendance/{id}', database: DATABASE_ID, region: REGION },
   async (event) => {
-    const a = event.data?.after.data();
-    if (!enabled() || !a) return;
+    if (!enabled() || !event.data?.after.exists) return;
+    const a = (await db.doc(`attendance/${event.params.id}`).get()).data(); // current, see above
+    if (!a) return;
     logSteps('attendance', event.params.id, [await pushToAdmin(toAdminAttendance(event.params.id, a), APPLY)]);
   },
 );
@@ -156,8 +162,9 @@ export const pushAttendanceToAdmin = onDocumentWritten(
 export const pushRequisitionToAdmin = onDocumentWritten(
   { document: 'requisitions/{id}', database: DATABASE_ID, region: REGION },
   async (event) => {
-    const r = event.data?.after.data();
-    if (!enabled() || !r) return;
+    if (!enabled() || !event.data?.after.exists) return;
+    const r = (await db.doc(`requisitions/${event.params.id}`).get()).data(); // current, see above
+    if (!r) return;
     logSteps('requisitions', event.params.id, [await pushToAdmin(toAdminRequisition(event.params.id, r), APPLY)]);
   },
 );
@@ -194,9 +201,10 @@ export async function pullWorkOrder(id: string, before: AdminDoc | undefined, af
         supervisorId: w.supervisorId,
         dueAt: w.dueAt!,
         reportPhotos: w.attachments,
+        // In its current status in one write, never open first.
+        status: w.status ?? 'open',
         createdBy: 'admin-sync',
       }));
-      if (w.cancelled) await db.doc(`workOrders/${id}`).update({ status: 'cancelled', updatedBy: 'admin-sync' });
     }
     return [{ action: 'create', target: `workOrders/${id}`, detail: ref }];
   }
@@ -214,6 +222,12 @@ export async function pullWorkOrder(id: string, before: AdminDoc | undefined, af
   if (moved('description') && w.description !== o.description) changes.description = w.description;
   if (moved('priority') && w.priority !== o.priority) changes.priority = w.priority;
   if (moved('dueAt') && w.dueAt && !sameMinute(w.dueAt, o.dueAt)) changes.dueAt = w.dueAt;
+  // The dashboard's status menu: the app's job follows.
+  if (moved('status') && w.status && w.status !== o.status) {
+    changes.status = w.status;
+    const stamp = STATUS_TIMESTAMP[w.status];
+    if (stamp) changes[stamp] = FieldValue.serverTimestamp();
+  }
   if (ACTIVE.includes(o.status)) {
     if (moved('assignedToId') && w.assignedToId !== (o.assignedToId ?? null)) {
       changes.assignedToId = w.assignedToId;
@@ -224,7 +238,6 @@ export async function pullWorkOrder(id: string, before: AdminDoc | undefined, af
       changes.supervisorId = w.supervisorId;
       changes.supervisorName = await userName(w.supervisorId);
     }
-    if (moved('cancelled') && w.cancelled) changes.status = 'cancelled';
   }
   if (moved('assetId') && w.assetId !== (o.assetId ?? null)) {
     const asset = w.assetId ? (await db.doc(`assets/${w.assetId}`).get()).data() : undefined;
