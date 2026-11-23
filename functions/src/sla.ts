@@ -86,7 +86,11 @@ export const onSlaScheduleWrite = onDocumentWritten(
   },
 );
 
-interface NewOrder {
+export interface NewOrder {
+  /** Document ID and reference to use; otherwise new ones. */
+  docId?: string;
+  ref?: string;
+  reportPhotos?: string[];
   type: 'client' | 'sla';
   title: string;
   description: string;
@@ -106,7 +110,7 @@ interface NewOrder {
  * Creates a work order with the next WO- reference, copying names next to
  * IDs. Runs inside [tx]; every read happens before the first write.
  */
-async function createOrder(tx: FirebaseFirestore.Transaction, order: NewOrder) {
+export async function createOrder(tx: FirebaseFirestore.Transaction, order: NewOrder) {
   const read = async (path: string | null | undefined) => (path ? (await tx.get(db.doc(path))).data() : undefined);
   const location = await read(`locations/${order.locationId}`);
   if (!location) throw new HttpsError('not-found', 'That location doesn’t exist.');
@@ -118,11 +122,11 @@ async function createOrder(tx: FirebaseFirestore.Transaction, order: NewOrder) {
   const supervisor = (await read(supervisorId ? `users/${supervisorId}` : null)) as UserDoc | undefined;
   const client = (await read(order.clientId ? `users/${order.clientId}` : null)) as UserDoc | undefined;
 
-  const number = await nextNumber(tx, 'workOrders', 1001);
-  const ref = db.collection('workOrders').doc();
+  const ref = order.docId ? db.doc(`workOrders/${order.docId}`) : db.collection('workOrders').doc();
+  const woRef = order.ref ?? `WO-${await nextNumber(tx, 'workOrders', 1001)}`;
   const now = Timestamp.now();
   tx.set(ref, {
-    ref: `WO-${number}`,
+    ref: woRef,
     type: order.type,
     title: order.title,
     description: order.description,
@@ -145,7 +149,7 @@ async function createOrder(tx: FirebaseFirestore.Transaction, order: NewOrder) {
     supervisorName: supervisor?.role === 'supervisor' ? supervisor.name : null,
     assignmentNote: null,
     dueAt: order.dueAt,
-    reportPhotos: [],
+    reportPhotos: order.reportPhotos ?? [],
     workPhotos: [],
     returnPhotos: [],
     inspectionChecks: [],
@@ -157,7 +161,7 @@ async function createOrder(tx: FirebaseFirestore.Transaction, order: NewOrder) {
     updatedAt: now,
     updatedBy: order.createdBy,
   });
-  return { id: ref.id, ref: `WO-${number}` };
+  return { id: ref.id, ref: woRef };
 }
 
 /** Admin only: a work order raised from the dashboard. */

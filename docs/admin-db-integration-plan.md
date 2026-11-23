@@ -1,7 +1,8 @@
 # Plan: connecting the app to the admin database
 
-Status, 22 November 2026: step 1 is built and tested on the emulators, but
-not switched on in the live project. The questions at the end are still open.
+Status, 23 November 2026: steps 1 and 2 are built and tested on the
+emulators, but not switched on in the live project. The questions at the end
+are still open.
 
 ## Progress
 
@@ -21,7 +22,45 @@ not switched on in the live project. The questions at the end are still open.
     one (question 2).
   - Staff with an empty dashboard password get an app account without a
     password, and need a reset.
-- **Step 2, shared data:** not started.
+- **Step 2, shared data (built, off in the live project).** Code in
+  `functions/src/bridge/shared.ts` and `outbound.ts`, with tests
+  (`functions/src/test/bridge_shared.test.ts`) and 10 more end-to-end checks
+  in `tool/bridge_smoke.mjs`.
+  - **App → dashboard:**
+    - Every app work order is copied to `work_order/{ref}`, and kept in step:
+      status, people, due time, wording.
+    - The app's timeline goes to `workorder_status`, with view links for
+      photos.
+    - Chat goes to `workorder_message`, clock-ins to `attendance`
+      (`att_app_…`), and parts requests to `requisition` (`req_app_…`).
+  - **Dashboard → app:**
+    - A job created in the dashboard appears in the app, with the same
+      number, and its attachments show as photos.
+    - The dashboard can change a job's wording, priority, due time, asset,
+      technician or supervisor, or cancel it.
+    - Chat messages come through.
+    - Approving or rejecting a request the app sent updates the app and tells
+      the requester.
+  - **No echoes:** each copy the app writes carries a fingerprint (`appSync`).
+    A change matching it is the app's own write coming back and is ignored.
+    Otherwise only the fields the dashboard changed are applied. Tested with
+    two quick reassignments.
+- **Step 2 defaults while questions are open:**
+  - **Progress comes only from the app.** The dashboard can't start, submit
+    or confirm a job (it can cancel one).
+  - **Stock stays with the dashboard.** An approval in the dashboard doesn't
+    change stock in the app; the dashboard adjusts it, and the change reaches
+    the app through step 1 (question 5).
+  - **Not copied:**
+    - the dashboard's own history entries
+    - parts requests created in the dashboard
+    - a job moved to another facility in the dashboard
+- **Left for the switch-over (step 3):**
+  - Run `tool/bridge_backfill.cjs --apply`.
+  - Remove the app's test accounts and the records imported on 18 November
+    (they're duplicates of the dashboard's).
+  - Deploy with `BRIDGE_ENABLED=true`.
+  - Test on phones.
 
 ## The goal
 

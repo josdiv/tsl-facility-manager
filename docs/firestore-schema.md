@@ -228,7 +228,7 @@ limit.
 | `supervisorId` `supervisorName` | string \| null | |
 | `assignmentNote` | string \| null | Up to 1,000 characters. The supervisor's note to the technician when reassigning, for example `Overdue, please do this first` |
 | `dueAt` | timestamp | |
-| `reportPhotos` | array&lt;string&gt; | Storage paths. Up to 4. From the person who reported it |
+| `reportPhotos` | array&lt;string&gt; | Storage paths. Up to 4. From the person who reported it. Jobs created in the admin dashboard have web links to its attachments instead |
 | `reportGeo` | geopoint \| null | Where the client's phone was when they reported it. Null for SLA and dashboard work |
 | `reportDistanceM` | number \| null | Metres from the facility at the time. Null when the facility had no position yet |
 | `reportAccuracyM` | number \| null | GPS accuracy of that reading, in metres |
@@ -462,6 +462,7 @@ when.
 | `assignAssetRef` / `assignInventoryRef` | Trigger | Give new assets and stock items their `AST-` / `SKU-` refs |
 | `onUserNameChange` | Trigger | Updates copied names (see below) |
 | `onUserAccessChange` / `onCompanyAccessChange` | Trigger | Keep the Storage token claims (`role`, `active`, `locs`) in step with the user and their company |
+| `pushWorkOrderToAdmin`, `pushEventToAdmin`, `pushMessageToAdmin`, `pushAttendanceToAdmin`, `pushRequisitionToAdmin`; `pullWorkOrderFromAdmin`, `pullMessageFromAdmin`, `pullRequisitionFromAdmin` | Trigger | Keep work orders, their history, chat, attendance and parts requests in step with the admin dashboard's database (step 2 of the plan). Off until the switch-over |
 | `bridgeStaff`, `bridgeClient`, `bridgeLocation`, `bridgeZone`, `bridgeAsset`, `bridgeDocument`, `bridgeInventory`, `bridgeSla` | Trigger, on the admin database | Copy admin-managed records from the dashboard's database into this one (docs/admin-db-integration-plan.md). Off until the switch-over (`BRIDGE_ENABLED` in `functions/.env`) |
 | `onSlaScheduleWrite` | Trigger | Sets `nextRunAt` when a schedule is created or switched back on |
 | `runSlaSchedules` | Scheduled, every 15 minutes | Creates each SLA work order 12 hours before it's due, notifies the technician, and moves `nextRunAt` on |

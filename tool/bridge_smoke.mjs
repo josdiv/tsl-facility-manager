@@ -146,5 +146,84 @@ await admin.doc('staff/staff_t2').update({ status: 'Inactive' });
 await until('account disabled', async () => (await auth.getUser('staff_t2')).disabled);
 ok('a deactivated staff member’s sign-in is disabled');
 
+
+console.log('Step 2: shared records');
+await admin.doc('location/loc_t2').set({ locationId: 'loc_t2', name: 'Shared Tower', latitude: 9.1, longitude: 7.5, radius: 100, type: 'Office', siteManager: 'staff_t4', status: 'Active', createdAt: now });
+for (const [id, name, role] of [['staff_t3', 'Tech Three', 'Staff'], ['staff_t4', 'Sup Four', 'Supervisor'], ['staff_t5', 'Tech Five', 'Staff'], ['staff_t6', 'Tech Six', 'Staff']]) {
+  await admin.doc(`staff/${id}`).set({ staffId: id, name, email: `${id}@example.com`, role, status: 'Active', phone: '', designation: role, assignedFacility: 'loc_t2', password: '', createdAt: now });
+}
+await until('step 2 people', async () => (await appDoc('users/staff_t6')) && (await appDoc('locations/loc_t2')));
+
+// A job made in the dashboard appears in the app.
+await admin.doc('work_order/WO-777001').set({ workOrderId: 'WO-777001', title: 'Service the generator', description: 'Monthly service', type: 'SLA', priority: 'High', status: 'Open', locationId: 'loc_t2', assetId: '', assignedTo: 'staff_t3', supervisedBy: 'staff_t4', dueDate: '2026-12-01', dueTime: '10:30', attachments: ['https://thickservices.com/x/wo.jpg'], createdAt: now, createdBy: 'Admin' });
+const job = await until('dashboard job in the app', () => appDoc('workOrders/WO-777001'));
+assert.equal(job.ref, 'WO-777001');
+assert.equal(job.type, 'sla');
+assert.equal(job.priority, 'high');
+assert.equal(job.assignedToName, 'Tech Three');
+assert.equal(job.supervisorName, 'Sup Four');
+assert.deepEqual(job.reportPhotos, ['https://thickservices.com/x/wo.jpg']);
+assert.equal(job.dueAt.toMillis(), Date.parse('2026-12-01T09:30:00Z'));
+ok('a job created in the dashboard appears in the app, with its people and photo');
+await until('its timeline in the dashboard', async () => (await admin.collection('workorder_status').where('workOrderId', '==', 'WO-777001').get()).size > 0);
+ok('the app’s timeline entries reach the dashboard’s job history');
+
+// Progress in the app reaches the dashboard.
+await tsl.doc('workOrders/WO-777001').update({ status: 'in_progress', startedAt: now, updatedBy: 'staff_t3' });
+await until('In Progress in the dashboard', async () => (await admin.doc('work_order/WO-777001').get()).data().status === 'In Progress');
+ok('starting the job in the app shows "In Progress" in the dashboard');
+
+// A dashboard reassignment reaches the app.
+await admin.doc('work_order/WO-777001').update({ assignedTo: 'staff_t5' });
+await until('reassigned in the app', async () => (await appDoc('workOrders/WO-777001')).assignedToId === 'staff_t5');
+assert.equal((await appDoc('workOrders/WO-777001')).assignedToName, 'Tech Five');
+ok('reassigning in the dashboard reassigns in the app');
+
+// Two quick changes in the app: the late echo of the first must not win.
+await tsl.doc('workOrders/WO-777001').update({ assignedToId: 'staff_t3', assignedToName: 'Tech Three', updatedBy: 'staff_t4' });
+await tsl.doc('workOrders/WO-777001').update({ assignedToId: 'staff_t6', assignedToName: 'Tech Six', updatedBy: 'staff_t4' });
+await new Promise((r) => setTimeout(r, 6000));
+assert.equal((await appDoc('workOrders/WO-777001')).assignedToId, 'staff_t6');
+assert.equal((await admin.doc('work_order/WO-777001').get()).data().assignedTo, 'staff_t6');
+ok('two quick reassignments in the app settle on the last, on both sides');
+
+// A job reported in the app appears in the dashboard.
+await tsl.doc('workOrders/appjob1').set({ ref: 'WO-9001', type: 'client', title: 'Leaking tap', description: 'Kitchen', priority: 'medium', status: 'open', locationId: 'loc_t2', locationName: 'Shared Tower', zoneId: null, zoneName: null, assetId: null, assetName: null, clientId: null, clientName: null, assignedToId: null, assignedToName: null, supervisorId: 'staff_t4', supervisorName: 'Sup Four', dueAt: now, reportPhotos: [], workPhotos: [], returnPhotos: [], inspectionChecks: [], inspectionPhotos: [], createdAt: now, createdBy: 'client_t1', updatedAt: now, updatedBy: 'client_t1' });
+const copy = await until('app job in the dashboard', async () => (await admin.doc('work_order/WO-9001').get()).data());
+assert.equal(copy.status, 'Open');
+assert.equal(copy.source, 'app');
+assert.equal(copy.createdBy, 'Client');
+ok('a job reported in the app appears in the dashboard');
+
+// Chat both ways, without copies bouncing back.
+await tsl.collection('workOrders/WO-777001/messages').doc('m_app_1').set({ text: 'On site now', senderId: 'staff_t6', senderName: 'Tech Six', senderRole: 'staff', sentAt: now });
+await until('app message in the dashboard', async () => (await admin.doc('workorder_message/msg_app_m_app_1').get()).exists);
+await admin.doc('workorder_message/msg_d1').set({ msgId: 'msg_d1', workOrderId: 'WO-777001', senderId: 'staff_t4', senderType: 'supervisor', message: 'Thanks, send photos', sendDateTime: now });
+const reply = await until('dashboard message in the app', () => appDoc('workOrders/WO-777001/messages/admin_msg_d1'));
+assert.equal(reply.senderName, 'Sup Four');
+await new Promise((r) => setTimeout(r, 3000));
+assert.equal((await admin.doc('workorder_message/msg_app_admin_msg_d1').get()).exists, false);
+ok('chat goes both ways, and nothing bounces back as a duplicate');
+
+// Attendance and parts requests.
+await tsl.doc('attendance/att1').set({ userId: 'staff_t6', userName: 'Tech Six', locationId: 'loc_t2', locationName: 'Shared Tower', status: 'clocked_in', attendanceStatus: 'present', clockInAt: now, clockInDistanceM: 12, clockInAccuracyM: 8, clockOutAt: null, source: 'app', createdAt: now });
+const att = await until('attendance in the dashboard', async () => (await admin.doc('attendance/att_app_att1').get()).data());
+assert.equal(att.status, 'Clocked In');
+assert.equal(att.staffId, 'staff_t6');
+ok('a clock-in in the app shows in the dashboard’s attendance');
+
+await tsl.doc('requisitions/rq1').set({ ref: 'REQ-5001', type: 'out', inventoryId: 'inv_t1', itemName: 'Air filter', locationId: 'loc_t2', workOrderId: 'WO-777001', workOrderRef: 'WO-777001', quantity: 2, reason: 'Worn', requestedById: 'staff_t6', requestedByName: 'Tech Six', requestedAt: now, status: 'pending', createdAt: now });
+await until('request in the dashboard', async () => (await admin.doc('requisition/req_app_rq1').get()).data()?.status === 'Pending');
+await admin.doc('requisition/req_app_rq1').update({ status: 'Approved', actionBy: 'staff_t4', actionDate: now });
+await until('approval in the app', async () => (await appDoc('requisitions/rq1')).status === 'approved');
+assert.equal((await appDoc('requisitions/rq1')).actionedByName, 'Sup Four');
+await until('requester told', async () => (await tsl.collection('users/staff_t6/notifications').where('kind', '==', 'requisition').get()).size > 0);
+ok('a parts request goes to the dashboard, and its approval comes back with a notification');
+
+// Cancelling in the dashboard.
+await admin.doc('work_order/WO-777001').update({ status: 'Cancelled' });
+await until('cancelled in the app', async () => (await appDoc('workOrders/WO-777001')).status === 'cancelled');
+ok('cancelling in the dashboard cancels the job in the app');
+
 console.log(`\nAll ${passed} bridge checks passed.`);
 process.exit(0);

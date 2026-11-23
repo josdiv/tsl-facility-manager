@@ -157,11 +157,12 @@ export const onWorkOrderWrite = onDocumentWritten(
       actorId === 'system'
         ? undefined
         : ((await db.doc(`users/${actorId}`).get()).data() as UserDoc | undefined);
+    const fromDashboard = actorId === 'admin-sync';
     const base = {
       statusAfter: after.status,
       actorId,
-      actorName: actor?.name ?? 'System',
-      actorRole: actor?.role ?? 'system',
+      actorName: actor?.name ?? (fromDashboard ? 'Admin dashboard' : 'System'),
+      actorRole: actor?.role ?? (fromDashboard ? 'admin' : 'system'),
       createdAt: serverTime(),
     };
     const events = db.collection(`workOrders/${event.params.id}/events`);

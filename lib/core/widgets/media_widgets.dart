@@ -31,6 +31,13 @@ class _PhotoImage extends StatelessWidget {
         errorBuilder: (_, _, _) => _Placeholder(photo),
       );
     }
+    if (isWebPhoto(photo)) {
+      return Image.network(
+        photo,
+        fit: fit,
+        errorBuilder: (_, _, _) => _Placeholder(photo),
+      );
+    }
     final photos = _photos(context);
     if (!isStoredPhoto(photo) || photos == null) return _Placeholder(photo);
     return FutureBuilder<String?>(

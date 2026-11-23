@@ -64,8 +64,17 @@ async function lookups(collection: Bridged, d: AdminDoc): Promise<Lookup> {
   return { location: get('location'), staff: get('staff'), zone: get('zone'), client: get('client') };
 }
 
-/** Writes a converted record: only differing fields, creation fields once. */
-async function write(target: Firestore, c: Converted, opts: SyncOptions): Promise<Step> {
+/**
+ * Writes a converted record: only differing fields, creation fields once.
+ * [extra] is added whenever something is written.
+ */
+export async function write(
+  target: Firestore,
+  c: Converted,
+  opts: SyncOptions,
+  by = 'admin-sync',
+  extra: (changed: Record<string, unknown>) => Record<string, unknown> = () => ({}),
+): Promise<Step> {
   const ref = target.doc(`${c.collection}/${c.id}`);
   const current = (await ref.get()).data();
   const changed = changedFields(c.fields, current);
@@ -76,8 +85,9 @@ async function write(target: Firestore, c: Converted, opts: SyncOptions): Promis
       {
         ...(current ? {} : c.onCreate),
         ...changed,
+        ...extra(changed),
         updatedAt: FieldValue.serverTimestamp(),
-        updatedBy: 'admin-sync',
+        updatedBy: by,
       },
       { merge: true },
     );

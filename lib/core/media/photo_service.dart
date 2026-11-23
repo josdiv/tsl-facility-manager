@@ -27,7 +27,12 @@ abstract interface class PhotoService {
 
 bool isLocalPhoto(String photo) => photo.startsWith('/');
 
-bool isStoredPhoto(String photo) => !isLocalPhoto(photo) && photo.contains('/');
+/// A photo on the web, such as one attached in the admin dashboard.
+bool isWebPhoto(String photo) =>
+    photo.startsWith('https://') || photo.startsWith('http://');
+
+bool isStoredPhoto(String photo) =>
+    !isLocalPhoto(photo) && !isWebPhoto(photo) && photo.contains('/');
 
 /// The file name, for labels.
 String photoName(String photo) => photo.split('/').last;
