@@ -1,7 +1,8 @@
-import { createHash, randomInt } from 'node:crypto';
+import { createHash, randomBytes, randomInt } from 'node:crypto';
 import { Timestamp } from 'firebase-admin/firestore';
 import { logger } from 'firebase-functions';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
+import { adminDb, logSteps, syncAdminRecord } from './bridge/sync';
 import { syncClaims } from './claims';
 import { sendMail } from './mail';
 import {
@@ -19,8 +20,12 @@ import {
 const CODE_TTL_MS = 10 * 60 * 1000;
 const RESEND_AFTER_MS = 60 * 1000;
 const MAX_ATTEMPTS = 5;
+/** How long a new client has to fill in the sign-up form after their code. */
+const TICKET_TTL_MS = 30 * 60 * 1000;
 
 const normaliseEmail = (value: unknown) => text(value, 'Email', 3, 254).toLowerCase();
+const optionalText = (value: unknown, field: string, max: number) =>
+  value == null || (typeof value === 'string' && !value.trim()) ? null : text(value, field, 1, max);
 const emailKey = (email: string) => createHash('sha256').update(email).digest('hex');
 const hashCode = (email: string, code: string) =>
   createHash('sha256').update(`${email}:${code}`).digest('hex');
@@ -36,8 +41,9 @@ async function findClient(email: string) {
 }
 
 /**
- * Emails a 6-digit sign-in code to a client. Always answers the same way, so
- * the form can't be used to find out which emails have accounts.
+ * Emails a 6-digit code to a client, or to someone signing up as one.
+ * Always answers the same way, so the form can't be used to find out which
+ * emails have accounts.
  */
 export const sendEmailCode = onCall({ region: REGION }, async (request) => {
   const email = normaliseEmail(request.data?.email);
@@ -47,9 +53,11 @@ export const sendEmailCode = onCall({ region: REGION }, async (request) => {
     throw new HttpsError('resource-exhausted', 'Please wait a minute before asking for another code.');
   }
 
+  // Clients sign themselves up, so a new email gets a code too. A client
+  // account that was switched off gets nothing.
   const client = await findClient(email);
   const user = client?.data() as UserDoc | undefined;
-  if (!client || user?.status !== 'active') {
+  if (client && user?.status !== 'active') {
     // Record the attempt for rate limiting, but send nothing.
     await ref.set({ sentAt: Timestamp.now(), codeHash: null, attempts: 0, expiresAt: Timestamp.now() });
     return { sent: true };
@@ -57,7 +65,7 @@ export const sendEmailCode = onCall({ region: REGION }, async (request) => {
 
   const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
   await ref.set({
-    uid: client.id,
+    uid: client?.id ?? null,
     codeHash: hashCode(email, code),
     attempts: 0,
     sentAt: Timestamp.now(),
@@ -67,31 +75,34 @@ export const sendEmailCode = onCall({ region: REGION }, async (request) => {
   try {
     await sendMail(
       email,
-      'Your TSL Facility Manager sign-in code',
-      'Your TSL Facility Manager sign-in code\n\n' +
-        'Enter this code in the app to sign in:\n\n' +
+      'Your TSL Facility Manager verification code',
+      'Your TSL Facility Manager verification code\n\n' +
+        'Enter this code in the app to continue:\n\n' +
         code +
         '\n\nThe code expires in 10 minutes. If you didn’t ask for it, you can ' +
         'ignore this email.',
     );
   } catch (error) {
-    logger.error('sign-in code email failed', error);
+    logger.error('verification code email failed', error);
     // Allow an immediate retry, since nothing was delivered.
     await ref.delete();
     throw new HttpsError('unavailable', 'We couldn’t send the code. Please try again.');
   }
-  logger.info('sign-in code sent');
+  logger.info(client ? 'sign-in code sent' : 'sign-up code sent');
   return { sent: true };
 });
 
-/** Checks the code and returns a custom token the app signs in with. */
+/**
+ * Checks the code. A client gets a custom token to sign in with; a new email
+ * gets a short-lived sign-up ticket for [createClientAccount] instead.
+ */
 export const verifyEmailCode = onCall({ region: REGION }, async (request) => {
   const email = normaliseEmail(request.data?.email);
   const code = text(request.data?.code, 'Code', 6, 6);
   const ref = db.doc(`emailCodes/${emailKey(email)}`);
   const invalid = new HttpsError('invalid-argument', 'That code is wrong or has expired.');
 
-  const uid = await db.runTransaction(async (tx) => {
+  const outcome = await db.runTransaction(async (tx) => {
     const entry = (await tx.get(ref)).data();
     if (!entry?.codeHash || entry.expiresAt.toMillis() < Date.now()) throw invalid;
     if (entry.attempts >= MAX_ATTEMPTS) {
@@ -101,11 +112,30 @@ export const verifyEmailCode = onCall({ region: REGION }, async (request) => {
       tx.update(ref, { attempts: entry.attempts + 1 });
       return null;
     }
-    tx.delete(ref);
-    return entry.uid as string;
+    if (entry.uid) {
+      tx.delete(ref);
+      return { uid: entry.uid as string };
+    }
+    // A new email: the code is used up, and the ticket proves the email for
+    // the sign-up form.
+    const ticket = randomBytes(24).toString('hex');
+    tx.set(ref, {
+      uid: null,
+      codeHash: null,
+      ticketHash: hashCode(email, ticket),
+      attempts: 0,
+      sentAt: entry.sentAt,
+      expiresAt: Timestamp.fromMillis(Date.now() + TICKET_TTL_MS),
+    });
+    return { ticket };
   });
-  if (!uid) throw invalid;
+  if (!outcome) throw invalid;
+  if ('ticket' in outcome) return { signupTicket: outcome.ticket };
+  return { token: await clientToken(outcome.uid, invalid) };
+});
 
+/** Signs a client in: checks their account and company, then mints a token. */
+async function clientToken(uid: string, invalid: HttpsError): Promise<string> {
   const user = (await db.doc(`users/${uid}`).get()).data() as UserDoc | undefined;
   if (!user || user.status !== 'active') throw invalid;
   await requireActiveCompany(user.companyId);
@@ -113,7 +143,61 @@ export const verifyEmailCode = onCall({ region: REGION }, async (request) => {
   await db.doc(`users/${uid}`).update({ lastLoginAt: serverTime() });
   // Storage rules read these claims; set them before the first sign-in.
   await syncClaims(uid, user);
-  return { token: await auth.createCustomToken(uid) };
+  return auth.createCustomToken(uid);
+}
+
+/**
+ * A new client signs up, after proving their email with a code. Their
+ * record goes into the dashboard's `client` collection, which holds client
+ * records apart from staff; the bridge copies it into the app as a company
+ * and a client user, done here straight away so they can sign in now.
+ */
+export const createClientAccount = onCall({ region: REGION }, async (request) => {
+  const data = request.data ?? {};
+  const email = normaliseEmail(data.email);
+  const ticket = text(data.ticket, 'Ticket', 10, 100);
+  const name = text(data.name, 'Name', 1, 100);
+  const companyName = optionalText(data.company, 'Company', 200);
+  const phoneNumber = optionalText(data.phone, 'Phone', 20);
+  const ref = db.doc(`emailCodes/${emailKey(email)}`);
+  const expired = new HttpsError('invalid-argument', 'Your sign-up has expired. Ask for a new code.');
+
+  await db.runTransaction(async (tx) => {
+    const entry = (await tx.get(ref)).data();
+    if (!entry?.ticketHash || entry.expiresAt.toMillis() < Date.now()) throw expired;
+    if (entry.ticketHash !== hashCode(email, ticket)) throw expired;
+    tx.delete(ref);
+  });
+
+  if (await findClient(email)) {
+    throw new HttpsError('already-exists', 'You already have an account. Sign in with a new code.');
+  }
+  if (await auth.getUserByEmail(email).catch(() => null)) {
+    throw new HttpsError(
+      'already-exists',
+      'This email belongs to a staff account. Use “Staff or supervisor? Sign in”.',
+    );
+  }
+
+  const id = `client_${randomBytes(7).toString('hex')}`;
+  const record = {
+    clientID: id,
+    clientName: companyName ?? name,
+    contactName: name,
+    clientEmail: email,
+    clientPhone: phoneNumber,
+    clientOTP: null,
+    createdAt: Timestamp.now(),
+    createdBy: 'app',
+  };
+  await adminDb.doc(`client/${id}`).set(record);
+  const steps = await syncAdminRecord('client', id, undefined, record, { apply: true });
+  logSteps('client', id, steps);
+  if (steps.some((s) => s.action === 'skip')) {
+    throw new HttpsError('internal', 'We couldn’t finish setting up your account. Please try again.');
+  }
+  logger.info(`client ${id} signed up`);
+  return { token: await clientToken(id, expired) };
 });
 
 /**

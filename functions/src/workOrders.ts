@@ -33,7 +33,8 @@ function photoPaths(value: unknown, locationId: string, workOrderId: string, kin
 }
 
 /**
- * A client reports an issue. Checks their company's status and monthly limit,
+ * A client reports an issue from the facility they're at. Checks their
+ * position, their company's status and monthly limit,
  * assigns the next WO- reference, and creates the work order.
  *
  * The app picks the document ID first, so it can upload photos to
@@ -47,7 +48,8 @@ export const reportIssue = onCall({ region: REGION }, async (request) => {
   const title = text(data.title, 'Title', 1, 200);
   const description = text(data.description, 'Description', 1, 4000);
   const locationId = text(data.locationId, 'Location', 1, 128);
-  const zoneId = text(data.zoneId, 'Zone', 1, 128);
+  // Optional: many facilities have no zones set up in the dashboard yet.
+  const zoneId = data.zoneId == null || data.zoneId === '' ? null : text(data.zoneId, 'Zone', 1, 128);
   const reportPhotos = photoPaths(data.photos, locationId, workOrderId, 'report', 4);
   // Clients report from the facility itself, which keeps out spam reports.
   const position = readPosition(data.position);
@@ -59,16 +61,17 @@ export const reportIssue = onCall({ region: REGION }, async (request) => {
     const [company, location, zone, usage, existing] = await Promise.all([
       tx.get(companyRef),
       tx.get(db.doc(`locations/${locationId}`)),
-      tx.get(db.doc(`zones/${zoneId}`)),
+      zoneId ? tx.get(db.doc(`zones/${zoneId}`)) : Promise.resolve(null),
       tx.get(usageRef),
       tx.get(db.doc(`workOrders/${workOrderId}`)),
     ]);
     if (existing.exists) throw new HttpsError('already-exists', 'That request was already sent.');
     const companyData = company.data()!;
-    if (!(companyData.locationIds as string[]).includes(locationId) || !location.exists) {
+    // Clients see every facility but can only report from the one they're at.
+    if (!location.exists || location.data()!.status !== 'active') {
       throw new HttpsError('permission-denied', 'You can’t report issues for that facility.');
     }
-    if (zone.data()?.locationId !== locationId) {
+    if (zone && zone.data()?.locationId !== locationId) {
       throw new HttpsError('invalid-argument', 'That zone isn’t at this facility.');
     }
     const used = (usage.data()?.workOrderCount as number | undefined) ?? 0;
@@ -79,12 +82,10 @@ export const reportIssue = onCall({ region: REGION }, async (request) => {
 
     // Transactions must finish every read before the first write.
     const locationData = location.data()!;
-    // A facility without a position yet can't be checked; the report is
-    // allowed and its distance left empty.
+    // Without a position the facility can't confirm the client is there.
     const geo = locationData.geo as GeoPoint | null;
-    const distanceM = geo
-      ? requireOnSite(geo, locationData.radiusM, position, data.position?.isMocked)
-      : null;
+    if (!geo) throw new HttpsError('failed-precondition', 'no-site-position');
+    const distanceM = requireOnSite(geo, locationData.radiusM, position, data.position?.isMocked);
     const supervisor = locationData.siteManagerId
       ? (await tx.get(db.doc(`users/${locationData.siteManagerId}`))).data()
       : undefined;
@@ -103,7 +104,7 @@ export const reportIssue = onCall({ region: REGION }, async (request) => {
       locationId,
       locationName: locationData.name,
       zoneId,
-      zoneName: zone.data()!.name,
+      zoneName: zone ? zone.data()!.name : null,
       assetId: null,
       assetName: null,
       companyId: user.companyId,

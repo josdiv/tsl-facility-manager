@@ -57,9 +57,11 @@ service cloud.firestore {
       return isFieldTeam() && me().locationId == locationId;
     }
 
+    // Clients see every facility; the reportIssue function only takes a
+    // report from the one they're standing at.
     function clientCanUseLocation(locationId) {
-      return isClient()
-        && locationId in get(/databases/$(database)/documents/companies/$(me().companyId)).data.locationIds;
+      return isClient() && active()
+        && exists(/databases/$(database)/documents/locations/$(locationId));
     }
 
     // ------------------------------------------------------------- Helpers
@@ -144,7 +146,7 @@ service cloud.firestore {
           && (!changedKeys().hasAny(['locationId', 'locationName']) || clientPicksLocation());
       }
 
-      // Clients choose their facility from their company's list. The admin
+      // Clients choose their usual facility from any of them. The dashboard
       // assigns everyone else's.
       function clientPicksLocation() {
         return resource.data.role == 'client'
@@ -204,8 +206,7 @@ service cloud.firestore {
     // ---------------------------------------------------- Reference data
 
     match /locations/{locationId} {
-      allow get: if isAdmin() || isFieldTeam() || clientCanUseLocation(locationId);
-      allow list: if isAdmin() || isFieldTeam();
+      allow read: if isAdmin() || isFieldTeam() || (isClient() && active());
       allow create: if isAdmin() && auditCreate() && validLocation();
       allow update: if isAdmin() && auditUpdate() && validLocation()
         && !changedKeys().hasAny(['zoneCount', 'assetCount']);
@@ -224,7 +225,7 @@ service cloud.firestore {
     }
 
     match /zones/{zoneId} {
-      allow read: if isAdmin() || isFieldTeam() || clientCanUseLocation(resource.data.locationId);
+      allow read: if isAdmin() || isFieldTeam() || (isClient() && active());
       allow create: if isAdmin() && auditCreate() && validZone();
       allow update: if isAdmin() && auditUpdate() && validZone();
       allow delete: if isAdmin();

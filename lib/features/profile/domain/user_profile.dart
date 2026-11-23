@@ -1,16 +1,46 @@
+import 'dart:math' as math;
+
 import 'package:equatable/equatable.dart';
 
 import '../../../core/session/app_role.dart';
 
 /// A facility someone can be linked to.
 class Facility extends Equatable {
-  const Facility(this.id, this.name);
+  const Facility(
+    this.id,
+    this.name, {
+    this.latitude,
+    this.longitude,
+    this.radiusM = 100,
+  });
 
   final String id;
   final String name;
 
+  /// Where the facility is, once the dashboard has set it. Clients can only
+  /// report from within [radiusM] metres of it.
+  final double? latitude;
+  final double? longitude;
+  final double radiusM;
+
+  bool get hasPosition => latitude != null && longitude != null;
+
+  /// Metres from [latitude], [longitude] on the Earth's surface. Only call
+  /// when [hasPosition].
+  double distanceFrom(double latitude, double longitude) {
+    double rad(double d) => d * math.pi / 180;
+    final dLat = rad(latitude - this.latitude!);
+    final dLng = rad(longitude - this.longitude!);
+    final h =
+        math.pow(math.sin(dLat / 2), 2) +
+        math.cos(rad(this.latitude!)) *
+            math.cos(rad(latitude)) *
+            math.pow(math.sin(dLng / 2), 2);
+    return 2 * 6371000 * math.asin(math.sqrt(h));
+  }
+
   @override
-  List<Object?> get props => [id, name];
+  List<Object?> get props => [id, name, latitude, longitude, radiusM];
 }
 
 /// Facilities a client can choose from in sample mode.

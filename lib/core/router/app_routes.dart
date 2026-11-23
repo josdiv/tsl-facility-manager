@@ -3,6 +3,7 @@ import '../session/app_role.dart';
 abstract final class AppRoutes {
   static const clientLogin = '/login/client';
   static const emailVerification = '/login/client/verify';
+  static const clientSignup = '/login/client/signup';
   static const staffLogin = '/login/staff';
 
   static const clientHome = '/client/home';

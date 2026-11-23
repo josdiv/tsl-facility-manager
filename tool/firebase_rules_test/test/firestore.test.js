@@ -224,10 +224,11 @@ describe('users and profiles', () => {
     await assertFails(updateDoc(doc(db, 'users/tunde'), { name: 'Hacked', ...stamp('emeka') }));
   });
 
-  it("lets clients pick a facility from their company's list only", async () => {
+  it('lets clients pick any existing facility, by its real name', async () => {
     const db = as(env, 'daniel');
     await assertSucceeds(updateDoc(doc(db, 'users/daniel'), { locationId: 'harbour', locationName: 'Harbour Point', ...stamp('daniel') }));
-    await assertFails(updateDoc(doc(db, 'users/daniel'), { locationId: 'cedar', locationName: 'Cedar Court', ...stamp('daniel') }));
+    await assertSucceeds(updateDoc(doc(db, 'users/daniel'), { locationId: 'cedar', locationName: 'Cedar Court', ...stamp('daniel') }));
+    await assertFails(updateDoc(doc(db, 'users/daniel'), { locationId: 'nowhere', locationName: 'Nowhere', ...stamp('daniel') }));
     await assertFails(updateDoc(doc(db, 'users/daniel'), { locationId: 'harbour', locationName: 'Wrong name', ...stamp('daniel') }));
   });
 
@@ -252,13 +253,13 @@ describe('users and profiles', () => {
 });
 
 describe('reference data', () => {
-  it("shows clients only their company's facilities and zones", async () => {
+  it('shows clients every facility and its zones, but not assets', async () => {
     const db = as(env, 'daniel');
-    await assertSucceeds(getDoc(doc(db, 'locations/marina')));
-    await assertFails(getDoc(doc(db, 'locations/cedar')));
-    await assertSucceeds(getDocs(query(collection(db, 'zones'), where('locationId', '==', 'marina'))));
-    await assertFails(getDocs(query(collection(db, 'zones'), where('locationId', '==', 'cedar'))));
+    await assertSucceeds(getDoc(doc(db, 'locations/cedar')));
+    await assertSucceeds(getDocs(query(collection(db, 'locations'), where('status', '==', 'active'))));
+    await assertSucceeds(getDocs(query(collection(db, 'zones'), where('locationId', '==', 'cedar'))));
     await assertFails(getDocs(collection(db, 'assets')));
+    await assertFails(getDoc(doc(as(env, 'locked'), 'locations/marina')));
   });
 
   it('only lets admins edit facilities', async () => {

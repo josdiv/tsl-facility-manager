@@ -195,7 +195,7 @@ class FirestoreWorkOrderRepository implements WorkOrderRepository {
             'title': draft.title,
             'description': draft.description,
             'locationId': draft.location.id,
-            'zoneId': draft.zone.id,
+            'zoneId': draft.zone?.id,
             'photos': [
               for (final photo in photos)
                 photoPath(locationId, docId, 'report', photo),
@@ -230,6 +230,9 @@ class FirestoreWorkOrderRepository implements WorkOrderRepository {
         'mock-location' =>
           'Your location appears to come from a location-faking app. Turn it '
               'off to report an issue.',
+        'no-site-position' =>
+          '${draft.location.name} has no map position yet, so reports can’t '
+              'be checked there. Ask the facility team to set it.',
         _ when e.code == 'unavailable' || e.code == 'internal' =>
           'We couldn’t send your request. Check your connection.',
         _ => e.message ?? 'We couldn’t send your request.',

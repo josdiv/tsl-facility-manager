@@ -36,6 +36,20 @@ questions at the end are still open.
 - **Not tested yet:** a supervisor in the app rejecting work (needs a
   supervisor's test login).
 
+### Changes on 23 November (boss's corrections)
+
+- **Clients sign themselves up.** Any email gets a code; a new email then
+  fills in name, company (optional) and phone (`createClientAccount`), which
+  writes `client/{id}` in the dashboard's database and signs them in.
+- **Clients see every facility** and can only report from inside its radius
+  (`reportIssue` no longer checks a company facility list). A report's zone
+  is optional, as most facilities have none yet.
+- **Staff, supervisors and facilities come only from the dashboard.** The
+  app-only test accounts (Mono and Test supervisor/technician) and facilities
+  (`mono-mall-abuja`, `test-site`) were retired; Mono Mall and its two
+  accounts were added through the dashboard with the same emails and
+  passwords.
+
 ## Progress
 
 - **Step 1, admin → app (built, off in the live project).** Code in
@@ -180,7 +194,7 @@ to cross.
 | Facilities (`location` → `locations`) | Admin | Admin → app | Includes position and radius for clock-in and reports |
 | Zones, assets, documents | Admin | Admin → app | Document files stay on thickservices.com; the app opens their links |
 | Stock (`inventory`) | Admin | Admin → app | Quantity only changes through approved requests |
-| Clients (`client` → `companies` + client user) | Admin | Admin → app | The dashboard needs to record which facilities each client uses |
+| Clients (`client` → `companies` + client user) | Client, in the app | App → admin on sign-up; admin → app after | Clients sign up in the app; they see every facility and report only where they are |
 | SLA schedules | Admin | Admin → app | One side generates the jobs, not both (question 3) |
 | Work orders | Shared | Both | See Work orders |
 | Job history (`workorder_status`) | App | App → admin | Written from the app's timeline, with photo links |
@@ -244,9 +258,10 @@ urgent one, because of the 16 December deadline.
 1. **How does the dashboard connect to Firestore?** With a service account
    (server key), or the public web config? If it's the public config, it
    breaks on 16 December and the data is open until then.
-2. **Clients and facilities.** Can the dashboard record which facilities each
-   client company uses? Can a company have more than one contact who reports
-   issues?
+2. **Clients and facilities.** Answered 23 Nov: clients aren't created in the
+   dashboard. They sign up in the app with an emailed code, and their record
+   is written to `client` (with a `contactName` and `createdBy: "app"`).
+   They see every facility but can only report from inside one's radius.
 3. **SLA jobs.** Should the dashboard or the app's scheduler create the jobs
    from SLA schedules? Only one of them should, or every job appears twice.
 4. **Passwords.** Should staff use the same password in the app and the

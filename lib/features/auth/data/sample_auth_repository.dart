@@ -14,7 +14,16 @@ class SampleAuthRepository implements AuthRepository {
   Future<void> sendEmailCode(String email) async {}
 
   @override
-  Future<void> verifyEmailCode(String email, String code) async {}
+  Future<String?> verifyEmailCode(String email, String code) async => null;
+
+  @override
+  Future<void> createClientAccount({
+    required String email,
+    required String ticket,
+    required String name,
+    required String company,
+    required String phone,
+  }) async {}
 
   @override
   Future<void> sendPasswordReset(String email) async {}

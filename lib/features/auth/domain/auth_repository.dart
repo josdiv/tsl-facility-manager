@@ -23,11 +23,22 @@ abstract interface class AuthRepository {
   /// Staff and supervisors sign in with the password the admin set up.
   Future<void> signInWithPassword(String email, String password);
 
-  /// Emails a 6-digit code to a client.
+  /// Emails a 6-digit code to a client, or to someone signing up as one.
   Future<void> sendEmailCode(String email);
 
-  /// Signs a client in with the code from their email.
-  Future<void> verifyEmailCode(String email, String code);
+  /// Checks the code from the email. A client is signed in and null is
+  /// returned; for a new email it returns a sign-up ticket for
+  /// [createClientAccount].
+  Future<String?> verifyEmailCode(String email, String code);
+
+  /// Creates a new client's account and signs them in.
+  Future<void> createClientAccount({
+    required String email,
+    required String ticket,
+    required String name,
+    required String company,
+    required String phone,
+  });
 
   Future<void> sendPasswordReset(String email);
 
@@ -40,6 +51,7 @@ abstract interface class AuthRepository {
     Facility? facility,
   });
 
-  /// Facilities the signed-in client may choose from.
+  /// Every active facility, for a client to choose from. Clients can only
+  /// report at the one they're standing in.
   Future<List<Facility>> facilityOptions();
 }

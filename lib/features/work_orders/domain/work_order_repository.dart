@@ -45,14 +45,16 @@ class IssueDraft extends Equatable {
     required this.title,
     required this.description,
     required this.location,
-    required this.zone,
+    this.zone,
     this.media = const [],
   });
 
   final String title;
   final String description;
   final Facility location;
-  final Zone zone;
+
+  /// Null at a facility with no zones set up yet.
+  final Zone? zone;
   final List<String> media;
 
   @override

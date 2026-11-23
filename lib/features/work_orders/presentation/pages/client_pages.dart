@@ -17,6 +17,7 @@ import '../../../../core/widgets/page_frames.dart';
 import '../../../../core/widgets/progress_timeline.dart';
 import '../../../../core/widgets/section_header.dart';
 import '../../../../core/widgets/stat_tile.dart';
+import '../../../attendance/domain/attendance.dart';
 import '../../../profile/domain/user_profile.dart';
 import '../../../profile/presentation/profile_cubit.dart';
 import '../../data/sample_work_orders.dart';
@@ -188,6 +189,12 @@ class _ReportIssuePageState extends State<ReportIssuePage> {
   var _zones = const <Zone>[];
   Facility? _location;
   Zone? _zone;
+  var _zonesLoading = false;
+
+  /// Where the phone is, once it can say. Facilities are then listed
+  /// nearest first.
+  LocationFix? _here;
+  var _pickedByHand = false;
   var _media = const <String>[];
   var _formVersion = 0;
   var _sending = false;
@@ -205,9 +212,12 @@ class _ReportIssuePageState extends State<ReportIssuePage> {
     super.dispose();
   }
 
-  /// Starts on the facility the client chose in their profile.
+  /// Starts on the facility the client chose in their profile, then on the
+  /// nearest one once the phone knows where it is. Clients see every
+  /// facility but can only report at the one they're in.
   Future<void> _loadFacilities() async {
     final profiles = context.read<ProfileCubit>();
+    final location = context.read<LocationService>();
     final facilities = await profiles.facilityOptions();
     if (!mounted) return;
     final chosen = profiles.of(AppRole.client).locationId;
@@ -216,6 +226,53 @@ class _ReportIssuePageState extends State<ReportIssuePage> {
       facilities.where((f) => f.id == chosen).firstOrNull ??
           facilities.firstOrNull,
     );
+
+    LocationFix? fix;
+    try {
+      await location.ensurePermission();
+      fix = await location.currentFix().timeout(const Duration(seconds: 15));
+    } on Object {
+      return; // Sending the report asks again, and explains what's wrong.
+    }
+    if (!mounted) return;
+    final here = fix;
+    double away(Facility f) => f.hasPosition
+        ? f.distanceFrom(here.latitude, here.longitude)
+        : double.infinity;
+    final nearest = [...facilities]..sort((a, b) => away(a).compareTo(away(b)));
+    setState(() {
+      _here = here;
+      _facilities = nearest;
+    });
+    final closest = nearest.firstOrNull;
+    if (!_pickedByHand && closest != null && closest.hasPosition) {
+      await _pickLocation(closest);
+    }
+  }
+
+  /// Whether the client can report at [facility] from where they are.
+  Widget? _distanceNote(Facility facility, TextTheme text) {
+    final here = _here;
+    if (here == null) return null;
+    if (!facility.hasPosition) {
+      return Text(
+        '${facility.name} has no map position yet, so reports can’t be '
+        'checked there.',
+        style: text.bodySmall?.copyWith(color: AppColors.danger),
+      );
+    }
+    final distance = facility.distanceFrom(here.latitude, here.longitude);
+    if (distance <= facility.radiusM) {
+      return Text(
+        'You’re at ${facility.name}.',
+        style: text.bodySmall?.copyWith(color: AppColors.success),
+      );
+    }
+    return Text(
+      'You’re ${distanceLabel(distance)} from ${facility.name}. You can only '
+      'report an issue while you’re at the facility.',
+      style: text.bodySmall?.copyWith(color: AppColors.danger),
+    );
   }
 
   Future<void> _pickLocation(Facility? location) async {
@@ -223,6 +280,7 @@ class _ReportIssuePageState extends State<ReportIssuePage> {
       _location = location;
       _zones = const [];
       _zone = null;
+      _zonesLoading = location != null;
     });
     if (location == null) return;
     final zones = await context.read<WorkOrderRepository>().zones(location.id);
@@ -230,6 +288,7 @@ class _ReportIssuePageState extends State<ReportIssuePage> {
     setState(() {
       _zones = zones;
       _zone = zones.firstOrNull;
+      _zonesLoading = false;
     });
   }
 
@@ -237,7 +296,10 @@ class _ReportIssuePageState extends State<ReportIssuePage> {
     if (_sending || !_form.currentState!.validate()) return;
     final location = _location;
     final zone = _zone;
-    if (location == null || zone == null) {
+    // A facility without zones takes reports for the whole site.
+    if (location == null ||
+        _zonesLoading ||
+        (zone == null && _zones.isNotEmpty)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Choose a location and zone first.')),
       );
@@ -321,13 +383,25 @@ class _ReportIssuePageState extends State<ReportIssuePage> {
                 const SizedBox(height: 16),
                 if (_facilities.isNotEmpty)
                   LabelledDropdown(
+                    // Starts again on the nearest once the phone's position
+                    // reorders the list.
+                    key: ValueKey(_here),
                     label: 'Location',
                     options: [for (final f in _facilities) f.name],
                     initialValue: _location?.name,
-                    onChanged: (value) => _pickLocation(
-                      _facilities.firstWhere((f) => f.name == value),
-                    ),
+                    onChanged: (value) {
+                      _pickedByHand = true;
+                      _pickLocation(
+                        _facilities.firstWhere((f) => f.name == value),
+                      );
+                    },
                   ),
+                if (_location case final location?)
+                  if (_distanceNote(location, text) case final note?)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: note,
+                    ),
                 if (_zones.isNotEmpty)
                   LabelledDropdown(
                     // A new location brings its own zones, so start afresh.

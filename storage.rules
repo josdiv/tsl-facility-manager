@@ -9,7 +9,8 @@ rules_version = '2';
 // onUserAccessChange and onCompanyAccessChange functions:
 //   role    admin | supervisor | staff | client
 //   active  account (and a client's company) is active
-//   locs    location IDs they work at, or their company's locations
+//   locs    location IDs they work at (clients may report at any facility, so
+//           theirs isn't used for work order photos)
 // The location is part of each path. Which photos end up on a work order, and
 // at which status, is checked by firestore.rules when the paths are saved.
 
@@ -33,6 +34,12 @@ service firebase.storage {
         && locationId in request.auth.token.locs;
     }
 
+    // Work order photos: clients report at any facility they're standing in
+    // (reportIssue checks that); everyone else only at their own.
+    function workOrderAt(locationId) {
+      return at(locationId) || (active() && role() == 'client');
+    }
+
     function image(maxMb) {
       return request.resource.size < maxMb * 1024 * 1024
         && request.resource.contentType.matches('image/(jpeg|png|webp|heic|heif)');
@@ -40,13 +47,13 @@ service firebase.storage {
 
     match /locations/{locationId}/workOrders/{workOrderId}/{kind}/{fileName} {
       allow read: if kind in ['report', 'work', 'return', 'inspection']
-        && (admin() || at(locationId));
+        && (admin() || workOrderAt(locationId));
 
       // Files are never replaced or deleted by the app. Cleanup of photos
       // that never got attached is done by a Cloud Function.
       allow update, delete: if false;
 
-      allow create: if resource == null && at(locationId) && image(10) && (
+      allow create: if resource == null && workOrderAt(locationId) && image(10) && (
         // A client, just before calling reportIssue.
         (kind == 'report' && role() == 'client')
         // Staff, for proof of work.

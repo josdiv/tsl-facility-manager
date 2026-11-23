@@ -63,13 +63,38 @@ class FirebaseAuthRepository implements AuthRepository {
       _call('sendEmailCode', {'email': email.trim()});
 
   @override
-  Future<void> verifyEmailCode(String email, String code) async {
+  Future<String?> verifyEmailCode(String email, String code) async {
     final result = await _call('verifyEmailCode', {
       'email': email.trim(),
       'code': code,
     });
+    final ticket = result['signupTicket'];
+    if (ticket is String) return ticket;
+    await _signInWithToken(result['token'] as String);
+    return null;
+  }
+
+  @override
+  Future<void> createClientAccount({
+    required String email,
+    required String ticket,
+    required String name,
+    required String company,
+    required String phone,
+  }) async {
+    final result = await _call('createClientAccount', {
+      'email': email.trim(),
+      'ticket': ticket,
+      'name': name.trim(),
+      'company': company.trim(),
+      'phone': phone.trim(),
+    });
+    await _signInWithToken(result['token'] as String);
+  }
+
+  Future<void> _signInWithToken(String token) async {
     try {
-      await _auth.signInWithCustomToken(result['token'] as String);
+      await _auth.signInWithCustomToken(token);
     } on FirebaseAuthException catch (e) {
       throw AuthFailure(_authMessage(e.code));
     }
@@ -112,19 +137,24 @@ class FirebaseAuthRepository implements AuthRepository {
 
   @override
   Future<List<Facility>> facilityOptions() async {
-    final uid = _auth.currentUser?.uid;
-    if (uid == null) return const [];
-    final companyId = (await _userDoc(uid).get()).data()?['companyId'];
-    if (companyId is! String) return const [];
-    final company = (await _db.doc('companies/$companyId').get()).data();
-    final ids = List<String>.from(company?['locationIds'] as List? ?? []);
-    final locations = await Future.wait(
-      ids.map((id) => _db.doc('locations/$id').get()),
+    if (_auth.currentUser == null) return const [];
+    final snap = await _db
+        .collection('locations')
+        .where('status', isEqualTo: 'active')
+        .get();
+    return [for (final doc in snap.docs) _facility(doc.id, doc.data())]
+      ..sort((a, b) => a.name.compareTo(b.name));
+  }
+
+  static Facility _facility(String id, Map<String, dynamic> data) {
+    final geo = data['geo'] as GeoPoint?;
+    return Facility(
+      id,
+      data['name'] as String? ?? id,
+      latitude: geo?.latitude,
+      longitude: geo?.longitude,
+      radiusM: (data['radiusM'] as num?)?.toDouble() ?? 100,
     );
-    return [
-      for (final doc in locations)
-        if (doc.exists) Facility(doc.id, doc.data()!['name'] as String),
-    ];
   }
 
   Future<Map<String, dynamic>> _call(

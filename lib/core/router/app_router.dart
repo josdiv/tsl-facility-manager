@@ -87,6 +87,12 @@ GoRouter createAppRouter({
           email: state.extra as String? ?? 'your email address',
         ),
       ),
+      _route(
+        AppRoutes.clientSignup,
+        (state) => ClientSignupPage(
+          signup: state.extra as ClientSignup? ?? const ClientSignup('', ''),
+        ),
+      ),
       _route(AppRoutes.staffLogin, (_) => const StaffLoginPage()),
 
       _shell(AppRole.client, [

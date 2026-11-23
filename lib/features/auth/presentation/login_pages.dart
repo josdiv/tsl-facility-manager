@@ -172,7 +172,7 @@ class _ClientLoginPageState extends State<ClientLoginPage> {
         ),
         const SizedBox(height: 20),
         Text(
-          'No password needed. We’ll send a secure email code.',
+          'No password needed. We’ll email you a code. New here? The same code sets up your account.',
           textAlign: TextAlign.center,
           style: text.bodyMedium,
         ),
@@ -437,17 +437,25 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
     // Close the keyboard first, so the next screen lays out at full height.
     FocusManager.instance.primaryFocus?.unfocus();
     setState(() => _busy = true);
-    final verified = await _attempt(
-      context,
-      () => context.read<AuthRepository>().verifyEmailCode(
+    String? signupTicket;
+    final verified = await _attempt(context, () async {
+      signupTicket = await context.read<AuthRepository>().verifyEmailCode(
         widget.email,
         _code.text,
-      ),
-    );
+      );
+    });
     if (!mounted) return;
     setState(() => _busy = false);
     if (!verified) {
       _code.clear(); // Ready for another try.
+      return;
+    }
+    // A new email: the client tells us who they are before signing in.
+    if (signupTicket case final ticket?) {
+      context.pushReplacement(
+        AppRoutes.clientSignup,
+        extra: ClientSignup(widget.email, ticket),
+      );
       return;
     }
     if (_isSample(context)) context.go(AppRoutes.clientHome);
@@ -530,6 +538,118 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A new client's verified email, carried to the sign-up form.
+class ClientSignup {
+  const ClientSignup(this.email, this.ticket);
+
+  final String email;
+
+  /// Proves [email] was verified; it expires after 30 minutes.
+  final String ticket;
+}
+
+/// Shown after a new client verifies their email: their details become the
+/// client record the dashboard sees.
+class ClientSignupPage extends StatefulWidget {
+  const ClientSignupPage({required this.signup, super.key});
+
+  final ClientSignup signup;
+
+  @override
+  State<ClientSignupPage> createState() => _ClientSignupPageState();
+}
+
+class _ClientSignupPageState extends State<ClientSignupPage> {
+  final _form = GlobalKey<FormState>();
+  final _name = TextEditingController();
+  final _company = TextEditingController();
+  final _phone = TextEditingController();
+  var _busy = false;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _company.dispose();
+    _phone.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_busy || !_form.currentState!.validate()) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() => _busy = true);
+    final created = await _attempt(
+      context,
+      () => context.read<AuthRepository>().createClientAccount(
+        email: widget.signup.email,
+        ticket: widget.signup.ticket,
+        name: _name.text,
+        company: _company.text,
+        phone: _phone.text,
+      ),
+    );
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (created && _isSample(context)) context.go(AppRoutes.clientHome);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Create your account')),
+      body: SafeArea(
+        top: false,
+        child: Form(
+          key: _form,
+          child: ListView(
+            padding: const EdgeInsets.all(24),
+            children: [
+              Text('Tell us about you', style: text.headlineMedium),
+              const SizedBox(height: 8),
+              Text(
+                'Your email ${widget.signup.email} is verified. Add your '
+                'details so the facility team knows who reported an issue.',
+                style: text.bodyMedium,
+              ),
+              const SizedBox(height: 24),
+              LabelledTextField(
+                label: 'Full name',
+                hint: 'Daniel Okafor',
+                controller: _name,
+                textInputAction: TextInputAction.next,
+                validator: (value) => requiredText(value, 'Enter your name'),
+              ),
+              LabelledTextField(
+                label: 'Company (optional)',
+                hint: 'Acme Corp Nigeria Ltd.',
+                controller: _company,
+                textInputAction: TextInputAction.next,
+              ),
+              LabelledTextField(
+                label: 'Phone number',
+                hint: '0803 123 4567',
+                controller: _phone,
+                keyboardType: TextInputType.phone,
+                textInputAction: TextInputAction.done,
+                validator: (value) =>
+                    requiredText(value, 'Enter a phone number'),
+                onSubmitted: (_) => _submit(),
+              ),
+              const SizedBox(height: 8),
+              _BusyButton(
+                label: 'Create account',
+                busy: _busy,
+                onPressed: _submit,
+              ),
+            ],
+          ),
         ),
       ),
     );

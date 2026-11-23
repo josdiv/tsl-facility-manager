@@ -16,10 +16,9 @@ const upload = (uid, path, contentType = 'image/jpeg') =>
 const marina = (id, kind, file) => `locations/marina/workOrders/${id}/${kind}/${file}`;
 
 describe('work order photos', () => {
-  it('lets a client upload report photos at their company\'s locations', async () => {
+  it('lets a client upload report photos at any facility (reportIssue checks they are there)', async () => {
     await assertSucceeds(upload('daniel', marina('brand-new', 'report', 'leak.jpg')));
-    await assertSucceeds(upload('daniel', 'locations/harbour/workOrders/brand-new/report/leak.jpg'));
-    await assertFails(upload('daniel', 'locations/cedar/workOrders/brand-new/report/leak.jpg'));
+    await assertSucceeds(upload('daniel', 'locations/cedar/workOrders/brand-new/report/leak.jpg'));
     await assertFails(upload('daniel', marina('brand-new', 'work', 'leak.jpg')));
     await assertFails(upload('locked', marina('brand-new', 'report', 'leak.jpg')));
   });
