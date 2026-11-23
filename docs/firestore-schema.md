@@ -172,7 +172,8 @@ Files attached to a location, such as SOPs and certificates.
 | `title` | string | |
 | `category` | enum | `compliance`, `manual`, `contract`, `report`, `other` |
 | `description` | string \| null | |
-| `filePath` | string | Storage path under `locations/{locationId}/documents/{documentId}/` |
+| `filePath` | string \| null | Storage path under `locations/{locationId}/documents/{documentId}/`. Null when the file is on the dashboard's server |
+| `fileUrl` | string \| null | Link to a file on the dashboard's server (thickservices.com). Set by the admin bridge |
 | `fileName` | string | Original file name, for display |
 | `contentType` | string | For example `application/pdf` |
 | `sizeBytes` | number | |
@@ -198,6 +199,7 @@ a work order with `type: "sla"`.
 | `nextRunAt` | timestamp | **Server** |
 | `lastRunAt` | timestamp \| null | **Server** |
 | `status` | enum | `active`, `inactive` |
+| `createsJobs` | boolean | Absent or `true`: the scheduler makes its work orders. `false`: a dashboard schedule whose jobs the dashboard still makes, kept for reference |
 | Audit fields | | |
 
 ### `workOrders/{workOrderId}`
@@ -347,6 +349,7 @@ callables**, which check the distance to the facility on the server.
 | `alertThreshold` | number | Low-stock level |
 | `stockStatus` | enum | `ok`, `low`, `out`. Must match the quantity: `out` when it's 0, `low` when it's at or below `alertThreshold`, otherwise `ok`. The rules check this |
 | `photoPath` | string \| null | Storage path under `inventory/{itemId}/` |
+| `photoUrl` | string \| null | Link to a photo on the dashboard's server. Set by the admin bridge |
 | `status` | enum | `active`, `inactive` |
 | Audit fields | | |
 
@@ -459,6 +462,7 @@ when.
 | `assignAssetRef` / `assignInventoryRef` | Trigger | Give new assets and stock items their `AST-` / `SKU-` refs |
 | `onUserNameChange` | Trigger | Updates copied names (see below) |
 | `onUserAccessChange` / `onCompanyAccessChange` | Trigger | Keep the Storage token claims (`role`, `active`, `locs`) in step with the user and their company |
+| `bridgeStaff`, `bridgeClient`, `bridgeLocation`, `bridgeZone`, `bridgeAsset`, `bridgeDocument`, `bridgeInventory`, `bridgeSla` | Trigger, on the admin database | Copy admin-managed records from the dashboard's database into this one (docs/admin-db-integration-plan.md). Off until the switch-over (`BRIDGE_ENABLED` in `functions/.env`) |
 | `onSlaScheduleWrite` | Trigger | Sets `nextRunAt` when a schedule is created or switched back on |
 | `runSlaSchedules` | Scheduled, every 15 minutes | Creates each SLA work order 12 hours before it's due, notifies the technician, and moves `nextRunAt` on |
 

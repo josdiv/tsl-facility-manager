@@ -204,6 +204,8 @@ export async function runDueSchedules(now = Date.now()): Promise<number> {
       await db.runTransaction(async (tx) => {
         const sla = (await tx.get(doc.ref)).data();
         if (!sla || sla.status !== 'active' || sla.nextRunAt.toMillis() > now + LEAD_TIME_MS) return;
+        // A dashboard schedule whose jobs the dashboard creates itself.
+        if (sla.createsJobs === false) return;
         const run = sla.nextRunAt.toMillis();
         // An asset reference goes in assetId; a plain location in locationId.
         await createOrder(tx, {

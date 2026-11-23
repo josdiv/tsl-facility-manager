@@ -4,6 +4,16 @@
  */
 export { createUser, sendEmailCode, verifyEmailCode } from './auth';
 export { clockIn, clockOut } from './attendance';
+export {
+  bridgeAsset,
+  bridgeClient,
+  bridgeDocument,
+  bridgeInventory,
+  bridgeLocation,
+  bridgeSla,
+  bridgeStaff,
+  bridgeZone,
+} from './bridge/triggers';
 export { onCompanyAccessChange, onUserAccessChange } from './claims';
 export {
   actionRequisition,
