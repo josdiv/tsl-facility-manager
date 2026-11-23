@@ -230,7 +230,7 @@ void main() {
     );
   });
 
-  testWidgets('supervisor confirms only after the full checklist', (
+  testWidgets('supervisor confirms straight away, without a checklist', (
     tester,
   ) async {
     await pumpApp(
@@ -241,18 +241,8 @@ void main() {
     expect(find.text('To review (2)'), findsOneWidget);
 
     await tapText(tester, 'Pump room leak check');
-    expect(
-      find.text('Tick every checklist item to confirm and close.'),
-      findsOneWidget,
-    );
-
-    for (final check in [
-      'Unit operating correctly',
-      'Area clean and safe',
-      'Evidence meets requirements',
-    ]) {
-      await tapText(tester, check);
-    }
+    // The inspection checklist was removed for now (23 Nov 2026).
+    expect(find.text('Inspection checklist'), findsNothing);
     await tapText(tester, 'Confirm & close');
 
     expect(find.text('To review (1)'), findsOneWidget);

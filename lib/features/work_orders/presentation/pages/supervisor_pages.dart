@@ -218,12 +218,6 @@ class ReviewInspectPage extends StatefulWidget {
 }
 
 class _ReviewInspectPageState extends State<ReviewInspectPage> {
-  static const _checks = [
-    'Unit operating correctly',
-    'Area clean and safe',
-    'Evidence meets requirements',
-  ];
-  final _ticked = <String>{};
   final _notes = TextEditingController();
   var _media = const <String>[];
   var _saving = false;
@@ -236,10 +230,6 @@ class _ReviewInspectPageState extends State<ReviewInspectPage> {
 
   Future<void> _confirm() async {
     final note = _notes.text.trim();
-    final checks = [
-      for (final check in _checks)
-        if (_ticked.contains(check)) check,
-    ];
     final media = _media;
     setState(() => _saving = true);
     final saved = await context.saveWorkOrder(
@@ -247,7 +237,8 @@ class _ReviewInspectPageState extends State<ReviewInspectPage> {
       (order, now) => order.confirm(
         at: now,
         inspectionNote: note.isEmpty ? null : note,
-        checks: checks,
+        // The inspection checklist was removed for now (23 Nov 2026).
+        checks: const [],
         media: media,
       ),
     );
@@ -266,7 +257,6 @@ class _ReviewInspectPageState extends State<ReviewInspectPage> {
         final text = Theme.of(context).textTheme;
         final submittedAt = order.submittedAt;
         final assignee = order.assignee ?? 'Unassigned';
-        final canConfirm = _ticked.length == _checks.length;
         return DetailPage(
           title: order.isAwaitingReview ? 'Review & inspect' : 'Work order',
           children: [
@@ -354,28 +344,6 @@ class _ReviewInspectPageState extends State<ReviewInspectPage> {
             ),
             InspectionCard(order),
             if (order.isAwaitingReview) ...[
-              AppCard(
-                padding: const EdgeInsets.fromLTRB(16, 16, 8, 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Inspection checklist', style: text.titleMedium),
-                    const SizedBox(height: 4),
-                    for (final check in _checks)
-                      CheckboxListTile(
-                        value: _ticked.contains(check),
-                        contentPadding: EdgeInsets.zero,
-                        controlAffinity: ListTileControlAffinity.leading,
-                        title: Text(check, style: text.bodyMedium),
-                        onChanged: (value) => setState(() {
-                          value == true
-                              ? _ticked.add(check)
-                              : _ticked.remove(check);
-                        }),
-                      ),
-                  ],
-                ),
-              ),
               LabelledTextField(
                 label: 'Supervisor inspection notes',
                 hint: 'Anything to record before closure?',
@@ -387,18 +355,9 @@ class _ReviewInspectPageState extends State<ReviewInspectPage> {
                 max: 4,
                 onChanged: (media) => _media = media,
               ),
-              // Always shown, so ticking the last item doesn't make the page
-              // jump.
-              InfoBanner(
-                canConfirm
-                    ? 'All checks done. You can confirm and close.'
-                    : 'Tick every checklist item to confirm and close.',
-                icon: canConfirm ? Icons.check_circle_outline : Icons.checklist,
-                tone: canConfirm ? BannerTone.success : BannerTone.neutral,
-              ),
               FilledButton.icon(
                 style: FilledButton.styleFrom(backgroundColor: AppColors.teal),
-                onPressed: canConfirm && !_saving ? _confirm : null,
+                onPressed: _saving ? null : _confirm,
                 icon: const Icon(Icons.check),
                 label: Text(_saving ? 'Saving…' : 'Confirm & close'),
               ),
