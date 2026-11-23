@@ -18,7 +18,6 @@ import '../../../../core/widgets/page_frames.dart';
 import '../../../../core/widgets/progress_timeline.dart';
 import '../../../../core/widgets/section_header.dart';
 import '../../../../core/widgets/stat_tile.dart';
-import '../../../attendance/presentation/attendance_page.dart';
 import '../../../profile/presentation/profile_cubit.dart';
 import '../../domain/work_order.dart';
 import '../../domain/work_order_repository.dart';
@@ -26,6 +25,7 @@ import '../bloc/work_orders_bloc.dart';
 import '../widgets/work_order_card.dart';
 import '../widgets/work_order_scope.dart';
 import '../widgets/inspection_card.dart';
+import '../../../attendance/presentation/shift_actions.dart';
 
 /// The supervisor's staff at their facility, kept up to date.
 class TeamBuilder extends StatefulWidget {
@@ -68,9 +68,6 @@ class SupervisorHomePage extends StatelessWidget {
     final queue = context.select<WorkOrdersBloc, List>(
       (bloc) => bloc.state.awaitingReview,
     );
-    final clockedIn = context.select<AttendanceCubit, bool>(
-      (cubit) => cubit.state.contains(AppRole.supervisor),
-    );
     final me = context.profileOf(AppRole.supervisor);
     final text = Theme.of(context).textTheme;
     return TabPage(
@@ -86,32 +83,7 @@ class SupervisorHomePage extends StatelessWidget {
           style: text.bodyMedium,
         ),
         const SizedBox(height: 16),
-        AppCard(
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('On-site attendance', style: text.titleMedium),
-                    const SizedBox(height: 4),
-                    Text(
-                      clockedIn
-                          ? 'Clocked in · GPS verified'
-                          : 'Clock in before your shift',
-                      style: text.bodyMedium,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              OutlinedButton(
-                onPressed: () => context.go(AppRoutes.supervisorClock),
-                child: const Text('GPS'),
-              ),
-            ],
-          ),
-        ),
+        const ShiftCard(role: AppRole.supervisor),
         TeamBuilder(
           builder: (context, team) => StatRow(
             first: StatTile(

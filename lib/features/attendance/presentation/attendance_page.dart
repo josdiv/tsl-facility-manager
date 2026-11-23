@@ -6,7 +6,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-import '../../../core/router/app_routes.dart';
 import '../../../core/session/app_role.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/widgets/app_card.dart';
@@ -17,6 +16,7 @@ import '../../../core/widgets/page_frames.dart';
 import '../../profile/presentation/profile_cubit.dart';
 import '../domain/attendance.dart';
 import 'attendance_cubit.dart';
+import 'shift_actions.dart';
 
 export 'attendance_cubit.dart';
 
@@ -127,6 +127,13 @@ class _LiveAttendanceState extends State<_LiveAttendance> {
     final attendance = context.read<AttendanceCubit>();
     final messenger = ScaffoldMessenger.of(context);
     final router = GoRouter.of(context);
+    if (!await confirmShiftChange(
+      context,
+      clockIn: clockIn,
+      facility: _site?.name ?? user.facility,
+    )) {
+      return;
+    }
     setState(() => _busy = true);
     try {
       if (clockIn) {
@@ -134,11 +141,14 @@ class _LiveAttendanceState extends State<_LiveAttendance> {
         messenger.showSnackBar(
           const SnackBar(content: Text('Shift started · GPS verified')),
         );
-        // Staff start their shift by picking up work.
-        if (widget.role == AppRole.staff) router.go(AppRoutes.staffTasks);
+        // Staff start their shift with their tasks, supervisors with the
+        // work waiting for review.
+        router.go(afterClockInRoute(widget.role));
       } else {
         await attendance.clockOut(user, fix: _fix);
-        messenger.showSnackBar(const SnackBar(content: Text('Shift ended')));
+        messenger
+          ..hideCurrentSnackBar()
+          ..showSnackBar(const SnackBar(content: Text('Shift ended')));
       }
     } on AttendanceFailure catch (failure) {
       messenger.showSnackBar(SnackBar(content: Text(failure.message)));

@@ -25,6 +25,7 @@ import '../bloc/work_orders_bloc.dart';
 import '../widgets/work_order_card.dart';
 import '../widgets/work_order_scope.dart';
 import '../widgets/inspection_card.dart';
+import '../../../attendance/presentation/shift_actions.dart';
 
 class StaffHomePage extends StatelessWidget {
   const StaffHomePage({super.key});
@@ -34,9 +35,6 @@ class StaffHomePage extends StatelessWidget {
     final uid = context.profileOf(AppRole.staff).uid;
     final orders = context.select<WorkOrdersBloc, List<WorkOrder>>(
       (bloc) => bloc.state.assignedTo(uid),
-    );
-    final clockedIn = context.select<AttendanceCubit, bool>(
-      (cubit) => cubit.state.contains(AppRole.staff),
     );
     final me = context.profileOf(AppRole.staff);
     final text = Theme.of(context).textTheme;
@@ -62,30 +60,7 @@ class StaffHomePage extends StatelessWidget {
           style: text.bodyMedium,
         ),
         const SizedBox(height: 16),
-        AppCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                clockedIn ? 'You’re clocked in' : 'Ready for your shift?',
-                style: text.titleMedium,
-              ),
-              const SizedBox(height: 4),
-              Text(me.facility, style: text.bodyMedium),
-              const SizedBox(height: 12),
-              if (clockedIn)
-                OutlinedButton(
-                  onPressed: () => context.go(AppRoutes.staffClock),
-                  child: const Text('View attendance'),
-                )
-              else
-                FilledButton(
-                  onPressed: () => context.go(AppRoutes.staffClock),
-                  child: const Text('Clock in with GPS'),
-                ),
-            ],
-          ),
-        ),
+        const ShiftCard(role: AppRole.staff),
         StatRow(
           first: StatTile(
             icon: Icons.assignment_outlined,

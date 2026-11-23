@@ -19,6 +19,14 @@ Future<void> pumpApp(
   await tester.pumpAndSettle();
 }
 
+/// Taps "Verify & clock in" and confirms the dialog.
+Future<void> clockIn(WidgetTester tester) async {
+  await tapText(tester, 'Verify & clock in');
+  expect(find.text('Clock in?'), findsOneWidget);
+  await tester.tap(find.widgetWithText(FilledButton, 'Clock in'));
+  await tester.pumpAndSettle();
+}
+
 Future<void> tapText(WidgetTester tester, String text) async {
   // Long pages build lazily, so scroll until the target exists.
   if (find.text(text).evaluate().isEmpty) {
@@ -176,7 +184,7 @@ void main() {
     await pumpApp(tester, AppRoutes.staffHome);
 
     await tapText(tester, 'Clock');
-    await tapText(tester, 'Verify & clock in');
+    await clockIn(tester);
     // A successful clock-in takes staff straight to their tasks.
     expect(find.text('Assigned tasks'), findsOneWidget);
     expect(find.text('Shift started · GPS verified'), findsOneWidget);
@@ -297,7 +305,7 @@ void main() {
     tester,
   ) async {
     await pumpApp(tester, AppRoutes.staffClock, size: const Size(360, 1600));
-    await tapText(tester, 'Verify & clock in');
+    await clockIn(tester);
     GoRouter.of(tester.element(find.text('Assigned tasks')))
         .push(AppRoutes.profile(AppRole.staff));
     await tester.pumpAndSettle();
@@ -370,7 +378,7 @@ void main() {
 
   testWidgets('a refused reading never shows an active shift', (tester) async {
     await pumpApp(tester, AppRoutes.staffClock);
-    await tapText(tester, 'Verify & clock in');
+    await clockIn(tester);
     expect(find.text('Assigned tasks'), findsOneWidget);
 
     GoRouter.of(tester.element(find.text('Assigned tasks')))
@@ -411,12 +419,39 @@ void main() {
     expect(find.text('WO-1048 · AHU-02 cooling fault'), findsOneWidget);
   });
 
-  testWidgets('a supervisor stays on attendance after clocking in', (
+  testWidgets('a supervisor goes to the review queue after clocking in', (
     tester,
   ) async {
     await pumpApp(tester, AppRoutes.supervisorClock);
+    await clockIn(tester);
+    expect(find.text('Shift started · GPS verified'), findsOneWidget);
+    expect(find.textContaining('To review'), findsOneWidget);
+  });
+
+  testWidgets('clocking in waits for confirmation', (tester) async {
+    await pumpApp(tester, AppRoutes.staffClock);
     await tapText(tester, 'Verify & clock in');
-    expect(find.text('You’re on the clock'), findsOneWidget);
+    await tapText(tester, 'Cancel');
+    expect(find.text('Start your shift'), findsOneWidget);
+    expect(find.text('You’re on the clock'), findsNothing);
+  });
+
+  testWidgets('staff clock out from home, after confirming', (tester) async {
+    await pumpApp(tester, AppRoutes.staffClock, size: const Size(360, 1600));
+    await clockIn(tester);
+    GoRouter.of(tester.element(find.text('Assigned tasks')))
+        .go(AppRoutes.staffHome);
+    await tester.pumpAndSettle();
+    expect(find.text('You’re clocked in'), findsOneWidget);
+    expect(find.text('View attendance'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Clock out'));
+    await tester.pumpAndSettle();
+    expect(find.text('Clock out?'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Clock out').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Shift ended'), findsOneWidget);
+    expect(find.text('Ready for your shift?'), findsOneWidget);
   });
 
   group('profile', () {
