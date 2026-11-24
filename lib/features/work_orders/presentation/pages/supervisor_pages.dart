@@ -91,12 +91,14 @@ class SupervisorHomePage extends StatelessWidget {
               label: 'Awaiting review',
               value: '${queue.length}',
               caption: 'Staff submissions',
+              onTap: () => context.go(AppRoutes.supervisorReviewTab('review')),
             ),
             second: StatTile(
               icon: Icons.groups_outlined,
               label: 'Team on-site',
               value: '${team.where((m) => m.onShift).length} / ${team.length}',
               caption: 'GPS verified',
+              onTap: () => context.go(AppRoutes.supervisorReviewTab('team')),
               iconColor: AppColors.teal,
               iconBackground: AppColors.successSoft,
             ),
@@ -125,7 +127,10 @@ class SupervisorHomePage extends StatelessWidget {
 /// Gap in the design: the Review tab jumped straight to one task, so
 /// supervisors had no list of submissions or of team work to reassign.
 class ReviewListPage extends StatelessWidget {
-  const ReviewListPage({super.key});
+  const ReviewListPage({this.initialTab, super.key});
+
+  /// `review` or `team`; review when null.
+  final String? initialTab;
 
   @override
   Widget build(BuildContext context) {
@@ -150,6 +155,7 @@ class ReviewListPage extends StatelessWidget {
 
     return DefaultTabController(
       length: 2,
+      initialIndex: initialTab == 'team' ? 1 : 0,
       child: TabPageFrame(
         title: 'Review',
         role: AppRole.supervisor,
@@ -223,6 +229,8 @@ class _ReviewInspectPageState extends State<ReviewInspectPage> {
 
   @override
   Widget build(BuildContext context) {
+    // Every action on a task waits until the shift has started.
+    final onShift = isOnShift(context, AppRole.supervisor);
     return WorkOrderScope(
       id: widget.id,
       builder: (context, order) {
@@ -257,8 +265,8 @@ class _ReviewInspectPageState extends State<ReviewInspectPage> {
                 children: [
                   KeyValueRow('Location', order.location),
                   KeyValueRow(
-                    'Zone',
-                    order.zone,
+                    'Asset / zone',
+                    order.assetAndZone,
                     divider: order.type == WorkOrderType.client,
                   ),
                   if (order.type == WorkOrderType.client)
@@ -315,6 +323,8 @@ class _ReviewInspectPageState extends State<ReviewInspectPage> {
               ),
             ),
             InspectionCard(order),
+            if (order.status.isActive && !onShift)
+              const ClockInFirst(role: AppRole.supervisor),
             if (order.isAwaitingReview) ...[
               LabelledTextField(
                 label: 'Supervisor inspection notes',
@@ -329,7 +339,7 @@ class _ReviewInspectPageState extends State<ReviewInspectPage> {
               ),
               FilledButton.icon(
                 style: FilledButton.styleFrom(backgroundColor: AppColors.teal),
-                onPressed: _saving ? null : _confirm,
+                onPressed: _saving || !onShift ? null : _confirm,
                 icon: const Icon(Icons.check),
                 label: Text(_saving ? 'Saving…' : 'Confirm & close'),
               ),
@@ -338,8 +348,9 @@ class _ReviewInspectPageState extends State<ReviewInspectPage> {
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AppColors.danger,
                 ),
-                onPressed: () =>
-                    context.push(AppRoutes.supervisorReturn(order.id)),
+                onPressed: !onShift
+                    ? null
+                    : () => context.push(AppRoutes.supervisorReturn(order.id)),
                 icon: const Icon(Icons.undo),
                 label: const Text('Return'),
               ),
@@ -347,15 +358,20 @@ class _ReviewInspectPageState extends State<ReviewInspectPage> {
             ],
             if (order.status.isActive) ...[
               OutlinedButton(
-                onPressed: () =>
-                    context.push(AppRoutes.supervisorReassign(order.id)),
+                onPressed: !onShift
+                    ? null
+                    : () =>
+                          context.push(AppRoutes.supervisorReassign(order.id)),
                 child: Text(order.assignee == null ? 'Assign' : 'Reassign'),
               ),
               const SizedBox(height: 8),
             ],
             OutlinedButton.icon(
-              onPressed: () =>
-                  context.push(AppRoutes.chat(AppRole.supervisor, order.id)),
+              onPressed: !onShift
+                  ? null
+                  : () => context.push(
+                      AppRoutes.chat(AppRole.supervisor, order.id),
+                    ),
               icon: const Icon(Icons.chat_bubble_outline, size: 18),
               label: const Text('Message'),
             ),
@@ -514,7 +530,10 @@ class _ReturnWithEvidencePageState extends State<ReturnWithEvidencePage> {
                         foregroundColor: AppColors.danger,
                         backgroundColor: AppColors.dangerSoft,
                       ),
-                      onPressed: _saving ? null : () => _submit(current),
+                      onPressed:
+                          _saving || !isOnShift(context, AppRole.supervisor)
+                          ? null
+                          : () => _submit(current),
                       child: Text(_saving ? 'Saving…' : 'Return work order'),
                     ),
                   ],
@@ -639,7 +658,10 @@ class _ReassignTaskPageState extends State<ReassignTaskPage> {
                 maxLines: 3,
               ),
               FilledButton(
-                onPressed: selected == null || _saving
+                onPressed:
+                    selected == null ||
+                        _saving ||
+                        !isOnShift(context, AppRole.supervisor)
                     ? null
                     : () => _submit(selected),
                 child: Text(

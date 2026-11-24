@@ -2,7 +2,7 @@
  * Cloud Functions for TSL Facility Manager. The data contract is in
  * docs/firestore-schema.md ("Cloud Functions").
  */
-export { createClientAccount, createUser, sendEmailCode, verifyEmailCode } from './auth';
+export { createClientAccount, createUser, deleteMyAccount, sendEmailCode, verifyEmailCode } from './auth';
 export { clockIn, clockOut } from './attendance';
 export {
   bridgeAsset,

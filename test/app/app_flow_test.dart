@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
@@ -6,17 +7,30 @@ import 'package:tsl_facility_manager/app/app.dart';
 import 'package:tsl_facility_manager/core/di/injection.dart';
 import 'package:tsl_facility_manager/core/router/app_routes.dart';
 import 'package:tsl_facility_manager/core/session/app_role.dart';
+import 'package:tsl_facility_manager/features/attendance/domain/attendance.dart';
+import 'package:tsl_facility_manager/features/attendance/presentation/attendance_cubit.dart';
+import 'package:tsl_facility_manager/features/profile/presentation/profile_cubit.dart';
 
 Future<void> pumpApp(
   WidgetTester tester,
   String location, {
   Size size = const Size(360, 780),
+  AppRole? onShift,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
   await tester.pumpWidget(TslFacilityManagerApp(initialLocation: location));
   await tester.pumpAndSettle();
+  // Task actions need a started shift.
+  if (onShift != null) {
+    final context = tester.element(find.byType(Scaffold).first);
+    await context.read<AttendanceCubit>().clockIn(
+      context.read<ProfileCubit>().of(onShift),
+      const LocationFix(latitude: 6.45, longitude: 3.39, accuracyM: 5),
+    );
+    await tester.pumpAndSettle();
+  }
 }
 
 /// Taps "Verify & clock in" and confirms the dialog.
@@ -178,6 +192,12 @@ void main() {
     expect(find.text('Request tracking'), findsOneWidget);
     expect(find.text('Broken window'), findsOneWidget);
     expect(find.textContaining('WO-1049'), findsWidgets);
+
+    // Back goes to the client's requests, not to the form again.
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.text('My requests'), findsOneWidget);
+    expect(find.text('Tell us what’s wrong'), findsNothing);
   });
 
   testWidgets('staff must clock in before starting work', (tester) async {
@@ -196,32 +216,77 @@ void main() {
     await tapText(tester, 'New assignment');
     expect(find.text('Monthly generator service'), findsOneWidget);
     expect(
-      find.text('Clock in with GPS before you start work on this task.'),
+      find.text('Clock in with GPS before you work on this task.'),
       findsNothing,
     );
+    // Let the "Shift started" snackbar clear; it sits over the button.
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
     await tapText(tester, 'Start work');
     expect(find.text('Mark as done & submit'), findsOneWidget);
   });
 
-  testWidgets('Start work is disabled until staff clock in', (tester) async {
-    await pumpApp(tester, AppRoutes.staffTask('WO-1047'));
+  testWidgets('every task action waits until staff clock in', (tester) async {
+    await pumpApp(
+      tester,
+      AppRoutes.staffTask('WO-1047'),
+      size: const Size(360, 1600),
+    );
     expect(
-      find.text('Clock in with GPS before you start work on this task.'),
+      find.text('Clock in with GPS before you work on this task.'),
       findsOneWidget,
     );
-    final button = tester.widget<ButtonStyleButton>(
-      find.ancestor(
-        of: find.text('Start work'),
-        matching: find.bySubtype<ButtonStyleButton>(),
-      ),
+    for (final action in ['Start work', 'Message', 'Request parts']) {
+      final button = tester.widget<ButtonStyleButton>(
+        find.ancestor(
+          of: find.text(action),
+          matching: find.bySubtype<ButtonStyleButton>(),
+        ),
+      );
+      expect(button.onPressed, isNull, reason: action);
+    }
+  });
+
+  testWidgets('supervisor task actions wait until they clock in', (
+    tester,
+  ) async {
+    await pumpApp(
+      tester,
+      AppRoutes.supervisorOrder('WO-1043'),
+      size: const Size(360, 2400),
     );
-    expect(button.onPressed, isNull);
+    expect(
+      find.text('Clock in with GPS before you work on this task.'),
+      findsOneWidget,
+    );
+    for (final action in ['Confirm & close', 'Return', 'Reassign', 'Message']) {
+      final button = tester.widget<ButtonStyleButton>(
+        find.ancestor(
+          of: find.text(action),
+          matching: find.bySubtype<ButtonStyleButton>(),
+        ),
+      );
+      expect(button.onPressed, isNull, reason: action);
+    }
+  });
+
+  testWidgets('home cards open their task tab', (tester) async {
+    await pumpApp(tester, AppRoutes.staffHome);
+    await tapText(tester, 'Completed');
+    expect(find.text('Assigned tasks'), findsOneWidget);
+    expect(find.text('Mark as done & submit'), findsNothing);
+    final tabs = DefaultTabController.of(tester.element(find.byType(TabBar)));
+    expect(tabs.index, 2, reason: 'Submitted tab');
   });
 
   testWidgets('staff submission needs a note and proof, then locks', (
     tester,
   ) async {
-    await pumpApp(tester, AppRoutes.staffTask('WO-1048'));
+    await pumpApp(
+      tester,
+      AppRoutes.staffTask('WO-1048'),
+      onShift: AppRole.staff,
+    );
 
     await tapText(tester, 'Mark as done & submit');
     expect(find.text('Describe the work you carried out'), findsOneWidget);
@@ -245,6 +310,7 @@ void main() {
       tester,
       AppRoutes.supervisorReview,
       size: const Size(360, 2400),
+      onShift: AppRole.supervisor,
     );
     expect(find.text('To review (2)'), findsOneWidget);
 
@@ -264,6 +330,7 @@ void main() {
       tester,
       AppRoutes.supervisorOrder('WO-1043'),
       size: const Size(360, 2400),
+      onShift: AppRole.supervisor,
     );
 
     await tapText(tester, 'Return');
@@ -285,6 +352,7 @@ void main() {
       tester,
       AppRoutes.supervisorOrder('WO-1047'),
       size: const Size(360, 1600),
+      onShift: AppRole.supervisor,
     );
     await tapText(tester, 'Reassign');
     await tapText(tester, 'David Adeyemi');
@@ -345,6 +413,39 @@ void main() {
     await tester.tap(find.byTooltip('Send message'));
     await tester.pumpAndSettle();
     expect(find.text('Any update?'), findsOneWidget);
+  });
+
+  testWidgets('clients see the technician\'s work photos', (tester) async {
+    await pumpApp(
+      tester,
+      AppRoutes.clientRequest('WO-1043'),
+      size: const Size(360, 2400),
+    );
+    expect(find.text('Work photos'), findsOneWidget);
+  });
+
+  testWidgets('supervisors send task messages only while clocked in', (
+    tester,
+  ) async {
+    await pumpApp(tester, AppRoutes.chat(AppRole.supervisor, 'WO-1048'));
+    expect(
+      find.text('Clock in to send messages about this task.'),
+      findsOneWidget,
+    );
+    expect(find.byTooltip('Send message'), findsNothing);
+
+    await pumpApp(
+      tester,
+      AppRoutes.chat(AppRole.supervisor, 'WO-1048'),
+      onShift: AppRole.supervisor,
+    );
+    // The team sees each sender's full name and role.
+    expect(find.textContaining('Daniel Clarke · Client'), findsOneWidget);
+    expect(find.textContaining('Emeka Okafor · Staff'), findsOneWidget);
+    await tester.enterText(find.byType(TextField), 'On my way');
+    await tester.tap(find.byTooltip('Send message'));
+    await tester.pumpAndSettle();
+    expect(find.text('On my way'), findsOneWidget);
   });
 
   testWidgets('refused clock-in cannot be submitted', (tester) async {
@@ -412,6 +513,7 @@ void main() {
       tester,
       AppRoutes.staffTask('WO-1048'),
       size: const Size(360, 1600),
+      onShift: AppRole.staff,
     );
     expect(find.text('Location'), findsOneWidget);
     expect(find.textContaining('Marina Towers'), findsWidgets);
@@ -539,5 +641,37 @@ void main() {
     );
     await tapText(tester, 'Sign out');
     expect(find.text('Welcome back.'), findsOneWidget);
+  });
+
+  testWidgets('a client can delete their account after confirming', (
+    tester,
+  ) async {
+    await pumpApp(
+      tester,
+      AppRoutes.profile(AppRole.client),
+      size: const Size(360, 2400),
+    );
+    await tapText(tester, 'Delete account');
+    expect(find.text('Delete your account?'), findsOneWidget);
+
+    // Cancel keeps everything as it was.
+    await tapText(tester, 'Cancel');
+    expect(find.text('Delete your account?'), findsNothing);
+    expect(find.text('Profile'), findsOneWidget);
+
+    await tapText(tester, 'Delete account');
+    await tester.tap(find.widgetWithText(FilledButton, 'Delete account'));
+    await tester.pumpAndSettle();
+    expect(find.text('Your facility, connected.'), findsOneWidget);
+    expect(find.text('Your account has been deleted.'), findsOneWidget);
+  });
+
+  testWidgets('staff accounts can\'t be deleted from the app', (tester) async {
+    await pumpApp(
+      tester,
+      AppRoutes.profile(AppRole.staff),
+      size: const Size(360, 2400),
+    );
+    expect(find.text('Delete account'), findsNothing);
   });
 }

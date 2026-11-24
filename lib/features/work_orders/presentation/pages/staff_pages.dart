@@ -67,12 +67,14 @@ class StaffHomePage extends StatelessWidget {
             label: 'To do',
             value: '${todo.length}',
             caption: '$sla SLA · ${todo.length - sla} client',
+            onTap: () => context.go(AppRoutes.staffTasksTab('today')),
           ),
           second: StatTile(
             icon: Icons.task_alt,
             label: 'Completed',
             value: '$done',
             caption: 'Confirmed work',
+            onTap: () => context.go(AppRoutes.staffTasksTab('submitted')),
             iconColor: AppColors.teal,
             iconBackground: AppColors.successSoft,
           ),
@@ -95,7 +97,10 @@ class StaffHomePage extends StatelessWidget {
 }
 
 class AssignedTasksPage extends StatelessWidget {
-  const AssignedTasksPage({super.key});
+  const AssignedTasksPage({this.initialTab, super.key});
+
+  /// `today`, `upcoming` or `submitted`; today when null.
+  final String? initialTab;
 
   @override
   Widget build(BuildContext context) {
@@ -134,6 +139,11 @@ class AssignedTasksPage extends StatelessWidget {
 
     return DefaultTabController(
       length: 3,
+      initialIndex: switch (initialTab) {
+        'upcoming' => 1,
+        'submitted' => 2,
+        _ => 0,
+      },
       child: TabPageFrame(
         title: 'Assigned tasks',
         role: AppRole.staff,
@@ -210,6 +220,8 @@ class _TaskEvidencePageState extends State<TaskEvidencePage> {
 
   @override
   Widget build(BuildContext context) {
+    // Every action on a task waits until the shift has started.
+    final onShift = isOnShift(context, AppRole.staff);
     return WorkOrderScope(
       id: widget.id,
       builder: (context, order) {
@@ -249,8 +261,8 @@ class _TaskEvidencePageState extends State<TaskEvidencePage> {
                   const SizedBox(height: 4),
                   KeyValueRow('Location', order.location),
                   KeyValueRow(
-                    'Zone',
-                    order.zone,
+                    'Asset / zone',
+                    order.assetAndZone,
                     divider: order.type == WorkOrderType.client,
                   ),
                   if (order.type == WorkOrderType.client)
@@ -268,6 +280,8 @@ class _TaskEvidencePageState extends State<TaskEvidencePage> {
                 icon: Icons.sticky_note_2_outlined,
                 tone: BannerTone.neutral,
               ),
+            if (order.status.isActive && !onShift)
+              const ClockInFirst(role: AppRole.staff),
             if (order.status.isActive)
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
@@ -275,9 +289,11 @@ class _TaskEvidencePageState extends State<TaskEvidencePage> {
                   children: [
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: () => context.push(
-                          AppRoutes.chat(AppRole.staff, order.id),
-                        ),
+                        onPressed: !onShift
+                            ? null
+                            : () => context.push(
+                                AppRoutes.chat(AppRole.staff, order.id),
+                              ),
                         icon: const Icon(Icons.chat_bubble_outline, size: 18),
                         label: const Text('Message'),
                       ),
@@ -285,9 +301,11 @@ class _TaskEvidencePageState extends State<TaskEvidencePage> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: () => context.push(
-                          AppRoutes.staffPartsNew(workOrderId: order.id),
-                        ),
+                        onPressed: !onShift
+                            ? null
+                            : () => context.push(
+                                AppRoutes.staffPartsNew(workOrderId: order.id),
+                              ),
                         icon: const Icon(Icons.inventory_2_outlined, size: 18),
                         label: const Text('Request parts'),
                       ),
@@ -296,15 +314,21 @@ class _TaskEvidencePageState extends State<TaskEvidencePage> {
                 ),
               ),
             if (order.status == WorkOrderStatus.returned) _ReturnNotice(order),
-            ..._actions(context, order),
+            ..._actions(context, order, onShift: onShift),
           ],
         );
       },
     );
   }
 
-  List<Widget> _actions(BuildContext context, WorkOrder order) {
-    if (order.status == WorkOrderStatus.open) return [_StartWork(order)];
+  List<Widget> _actions(
+    BuildContext context,
+    WorkOrder order, {
+    required bool onShift,
+  }) {
+    if (order.status == WorkOrderStatus.open) {
+      return [_StartWork(order, onShift: onShift)];
+    }
     if (!order.isEditableByStaff) {
       return [
         const InfoBanner(
@@ -348,7 +372,7 @@ class _TaskEvidencePageState extends State<TaskEvidencePage> {
                 ),
               ),
             FilledButton.icon(
-              onPressed: _saving ? null : _submit,
+              onPressed: _saving || !onShift ? null : _submit,
               icon: const Icon(Icons.check),
               label: Text(_saving ? 'Submitting…' : 'Mark as done & submit'),
             ),
@@ -360,32 +384,18 @@ class _TaskEvidencePageState extends State<TaskEvidencePage> {
 }
 
 class _StartWork extends StatelessWidget {
-  const _StartWork(this.order);
+  const _StartWork(this.order, {required this.onShift});
 
   final WorkOrder order;
+  final bool onShift;
 
   @override
   Widget build(BuildContext context) {
-    final clockedIn = context.select<AttendanceCubit, bool>(
-      (cubit) => cubit.state.contains(AppRole.staff),
-    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (!clockedIn) ...[
-          const InfoBanner(
-            'Clock in with GPS before you start work on this task.',
-            icon: Icons.location_on_outlined,
-            tone: BannerTone.warning,
-          ),
-          OutlinedButton(
-            onPressed: () => context.go(AppRoutes.staffClock),
-            child: const Text('Go to clock in'),
-          ),
-          const SizedBox(height: 8),
-        ],
         FilledButton.icon(
-          onPressed: clockedIn
+          onPressed: onShift
               ? () => context.read<WorkOrdersBloc>().add(
                   WorkOrderChanged(
                     order.id,

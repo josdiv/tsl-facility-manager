@@ -295,7 +295,8 @@ service cloud.firestore {
         me().role == 'admin'
         || (me().role == 'client' && order.clientId == request.auth.uid)
         || (me().role == 'staff' && order.assignedToId == request.auth.uid)
-        || (me().role == 'supervisor' && order.locationId == me().locationId)
+        || (me().role == 'supervisor'
+          && (order.locationId == me().locationId || order.supervisorId == request.auth.uid))
       );
     }
 
@@ -310,13 +311,17 @@ service cloud.firestore {
       // scheduler, which assign the ref and enforce monthly limits.
       allow create, delete: if false;
 
+      // Staff and supervisors act on a task only while clocked in; the
+      // clockIn function sets onShift.
       allow update: if active() && auditUpdate() && (
         adminChange()
-        || start()
-        || submit()
-        || confirm()
-        || returnForCorrection()
-        || reassign()
+        || (me().onShift == true && (
+          start()
+          || submit()
+          || confirm()
+          || returnForCorrection()
+          || reassign()
+        ))
       );
 
       function current() {
@@ -327,8 +332,10 @@ service cloud.firestore {
         return me().role == 'staff' && current().assignedToId == request.auth.uid;
       }
 
+      // The facility's supervisor, or the one the dashboard named on the job.
       function isLocationSupervisor() {
-        return me().role == 'supervisor' && current().locationId == me().locationId;
+        return me().role == 'supervisor'
+          && (current().locationId == me().locationId || current().supervisorId == request.auth.uid);
       }
 
       function only(keys) {
@@ -423,6 +430,7 @@ service cloud.firestore {
         allow read: if canReadWorkOrder(workOrder(workOrderId));
         allow create: if canReadWorkOrder(workOrder(workOrderId))
           && workOrder(workOrderId).status != 'cancelled'
+          && (me().role in ['admin', 'client'] || me().onShift == true)
           && validMessage();
         allow update, delete: if false;
       }

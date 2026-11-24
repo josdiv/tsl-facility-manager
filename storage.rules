@@ -34,10 +34,13 @@ service firebase.storage {
         && locationId in request.auth.token.locs;
     }
 
-    // Work order photos: clients report at any facility they're standing in
-    // (reportIssue checks that); everyone else only at their own.
+    // Work order photos. The dashboard can give a job to staff or a
+    // supervisor from another facility, and clients report wherever they
+    // are, so any active account may use them. Storage can't read the
+    // app's database to check the job; Firestore rules decide which photos
+    // get attached to which job, and only by its assignee or supervisor.
     function workOrderAt(locationId) {
-      return at(locationId) || (active() && role() == 'client');
+      return active() && role() in ['admin', 'supervisor', 'staff', 'client'];
     }
 
     function image(maxMb) {

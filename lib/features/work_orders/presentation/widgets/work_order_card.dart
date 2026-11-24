@@ -90,7 +90,9 @@ class WorkOrderCard extends StatelessWidget {
               const SizedBox(width: 4),
               Expanded(
                 child: Text(
-                  '${order.location.split(',').first} · ${order.zone}',
+                  order.zone.isEmpty
+                      ? order.location.split(',').first
+                      : '${order.location.split(',').first} · ${order.zone}',
                   style: text.bodySmall,
                 ),
               ),

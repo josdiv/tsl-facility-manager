@@ -48,6 +48,7 @@ class WorkOrder extends Equatable {
     required this.status,
     required this.location,
     required this.zone,
+    this.asset = '',
     required this.due,
     required this.submittedBy,
     this.assignee,
@@ -79,6 +80,9 @@ class WorkOrder extends Equatable {
   final WorkOrderStatus status;
   final String location;
   final String zone;
+
+  /// The asset the job is for, if any (SLA jobs usually have one).
+  final String asset;
   final DateTime due;
   final String submittedBy;
   final String? assignee;
@@ -244,6 +248,7 @@ class WorkOrder extends Equatable {
     status: status,
     location: location,
     zone: zone,
+    asset: asset,
     due: due,
     submittedBy: submittedBy,
     assignee: assignee,
@@ -302,6 +307,7 @@ class WorkOrder extends Equatable {
       status: status ?? this.status,
       location: location,
       zone: zone,
+      asset: asset,
       due: due,
       submittedBy: submittedBy,
       assignee: assignee ?? this.assignee,
@@ -329,6 +335,15 @@ class WorkOrder extends Equatable {
     );
   }
 
+  /// The dashboard's "Asset / zone" line, with its wording for jobs that
+  /// have neither.
+  String get assetAndZone =>
+      '${asset.isEmpty ? 'General facility' : asset} · '
+      '${zone.isEmpty ? 'General zone' : zone}';
+
+  /// "Location · zone", or just the location when there's no zone.
+  String get place => zone.isEmpty ? location : '$location · $zone';
+
   @override
   List<Object?> get props => [
     id,
@@ -338,6 +353,7 @@ class WorkOrder extends Equatable {
     status,
     location,
     zone,
+    asset,
     due,
     submittedBy,
     assignee,

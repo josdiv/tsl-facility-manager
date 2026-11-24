@@ -4,7 +4,7 @@ import {
   addDoc, collection, deleteDoc, doc, getDoc, getDocs, query, serverTimestamp,
   setDoc, Timestamp, updateDoc, where,
 } from 'firebase/firestore';
-import { as, createEnv, seed } from './helpers.js';
+import { as, createEnv, order, seed } from './helpers.js';
 
 let env;
 before(async () => { env = await createEnv(); });
@@ -56,6 +56,18 @@ describe('reading work orders', () => {
     await assertFails(getDocs(query(collection(db, 'workOrders'), where('locationId', '==', 'cedar'))));
   });
 
+  it('lets a supervisor named on a job at another facility read and confirm it', async () => {
+    const borrowed = order({ ref: 'WO-1090', status: 'pending_review', locationId: 'cedar', locationName: 'Cedar Court',
+      zoneId: 'cedar-hall', assignedToId: 'grace', assignedToName: 'Grace Eze', supervisorId: 'sarah' });
+    await env.withSecurityRulesDisabled((c) => setDoc(doc(c.firestore(), 'workOrders/borrowed'), borrowed));
+    const db = as(env, 'sarah');
+    await assertSucceeds(getDoc(doc(db, 'workOrders/borrowed')));
+    await assertSucceeds(getDocs(query(collection(db, 'workOrders'), where('supervisorId', '==', 'sarah'))));
+    await assertSucceeds(updateDoc(doc(db, 'workOrders/borrowed'), {
+      status: 'completed', inspectionChecks: [], completedAt: serverTimestamp(), ...stamp('sarah'),
+    }));
+  });
+
   it('lets admins read everything', async () => {
     await assertSucceeds(getDocs(collection(as(env, 'admin'), 'workOrders')));
   });
@@ -71,6 +83,21 @@ describe('work order lifecycle', () => {
   it('lets the assignee start an open task', async () => {
     await assertSucceeds(updateDoc(doc(as(env, 'emeka'), 'workOrders/open'), {
       status: 'in_progress', startedAt: serverTimestamp(), ...stamp('emeka'),
+    }));
+  });
+
+  it('refuses any task change from staff or a supervisor who is off shift', async () => {
+    const offShift = (uid) => env.withSecurityRulesDisabled((c) => updateDoc(doc(c.firestore(), `users/${uid}`), { onShift: false }));
+    await offShift('emeka');
+    await assertFails(updateDoc(doc(as(env, 'emeka'), 'workOrders/open'), {
+      status: 'in_progress', startedAt: serverTimestamp(), ...stamp('emeka'),
+    }));
+    await assertFails(addDoc(collection(as(env, 'emeka'), 'workOrders/open/messages'), {
+      text: 'On my way', senderId: 'emeka', senderName: 'Emeka Okafor', senderRole: 'staff', sentAt: serverTimestamp(),
+    }));
+    await offShift('sarah');
+    await assertFails(updateDoc(doc(as(env, 'sarah'), 'workOrders/review'), {
+      status: 'completed', inspectionChecks: [], completedAt: serverTimestamp(), ...stamp('sarah'),
     }));
   });
 

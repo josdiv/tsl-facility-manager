@@ -114,6 +114,13 @@ class FirebaseAuthRepository implements AuthRepository {
   Future<void> signOut() => _auth.signOut();
 
   @override
+  Future<void> deleteAccount() async {
+    await _call('deleteMyAccount', const {});
+    // The account is gone on the server; drop the local session too.
+    await _auth.signOut();
+  }
+
+  @override
   Future<void> updateProfile({
     required String name,
     required String phone,

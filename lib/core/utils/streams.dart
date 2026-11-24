@@ -56,3 +56,58 @@ extension SwitchMap<T> on Stream<T> {
     return controller.stream;
   }
 }
+
+/// The latest values of [a] and [b] combined, once both have emitted.
+Stream<R> combineLatest2<A, B, R>(
+  Stream<A> a,
+  Stream<B> b,
+  R Function(A a, B b) combine,
+) {
+  late final StreamController<R> controller;
+  StreamSubscription<A>? subA;
+  StreamSubscription<B>? subB;
+  A? lastA;
+  B? lastB;
+  var hasA = false, hasB = false, doneA = false, doneB = false;
+  void emit() {
+    if (hasA && hasB) controller.add(combine(lastA as A, lastB as B));
+  }
+
+  void done() {
+    if (doneA && doneB) unawaited(controller.close());
+  }
+
+  controller = StreamController<R>(
+    onListen: () {
+      subA = a.listen(
+        (v) {
+          lastA = v;
+          hasA = true;
+          emit();
+        },
+        onError: controller.addError,
+        onDone: () {
+          doneA = true;
+          done();
+        },
+      );
+      subB = b.listen(
+        (v) {
+          lastB = v;
+          hasB = true;
+          emit();
+        },
+        onError: controller.addError,
+        onDone: () {
+          doneB = true;
+          done();
+        },
+      );
+    },
+    onCancel: () async {
+      await subA?.cancel();
+      await subB?.cancel();
+    },
+  );
+  return controller.stream;
+}

@@ -40,6 +40,7 @@ class _ProfilePageState extends State<ProfilePage> {
       .read<ProfileCubit>()
       .facilityOptions();
   var _saving = false;
+  var _deleting = false;
 
   @override
   void dispose() {
@@ -119,6 +120,51 @@ class _ProfilePageState extends State<ProfilePage> {
     final router = GoRouter.of(context);
     await context.read<SessionCubit>().signOut();
     router.go(AppRoutes.login(widget.role));
+  }
+
+  /// Clients can delete their own account (staff accounts are managed in
+  /// the dashboard).
+  Future<void> _deleteAccount() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete your account?'),
+        content: const Text(
+          'This permanently deletes your account and personal details, and '
+          'signs you out. Requests you have already reported stay with the '
+          'facility team as part of their records. You can sign up again '
+          'later with the same email.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete account'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _deleting = true);
+    final router = GoRouter.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final session = context.read<SessionCubit>();
+    try {
+      await context.read<AuthRepository>().deleteAccount();
+    } on AuthFailure catch (failure) {
+      if (mounted) setState(() => _deleting = false);
+      messenger.showSnackBar(SnackBar(content: Text(failure.message)));
+      return;
+    }
+    await session.signOut();
+    router.go(AppRoutes.login(widget.role));
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Your account has been deleted.')),
+    );
   }
 
   @override
@@ -219,6 +265,14 @@ class _ProfilePageState extends State<ProfilePage> {
           icon: const Icon(Icons.logout),
           label: const Text('Sign out'),
         ),
+        if (widget.role == AppRole.client) ...[
+          const SizedBox(height: 8),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: AppColors.danger),
+            onPressed: _deleting ? null : _deleteAccount,
+            child: Text(_deleting ? 'Deleting…' : 'Delete account'),
+          ),
+        ],
       ],
     );
   }

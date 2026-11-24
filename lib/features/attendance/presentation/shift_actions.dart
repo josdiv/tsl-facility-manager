@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/router/app_routes.dart';
 import '../../../core/session/app_role.dart';
 import '../../../core/widgets/app_card.dart';
+import '../../../core/widgets/info_banner.dart';
 import '../../profile/presentation/profile_cubit.dart';
 import '../domain/attendance.dart';
 import 'attendance_cubit.dart';
@@ -135,6 +136,38 @@ class _ShiftCardState extends State<ShiftCard> {
             ),
         ],
       ),
+    );
+  }
+}
+
+/// Whether [role] is clocked in. Staff and supervisors must be, before they
+/// act on any task.
+bool isOnShift(BuildContext context, AppRole role) => context
+    .select<AttendanceCubit, bool>((cubit) => cubit.state.contains(role));
+
+/// Shown on a task while its staff member or supervisor is off shift; every
+/// action on the task stays disabled until they clock in.
+class ClockInFirst extends StatelessWidget {
+  const ClockInFirst({required this.role, super.key});
+
+  final AppRole role;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const InfoBanner(
+          'Clock in with GPS before you work on this task.',
+          icon: Icons.location_on_outlined,
+          tone: BannerTone.warning,
+        ),
+        OutlinedButton(
+          onPressed: () => context.go(clockRoute(role)),
+          child: const Text('Go to clock in'),
+        ),
+        const SizedBox(height: 12),
+      ],
     );
   }
 }

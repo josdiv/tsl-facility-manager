@@ -21,7 +21,7 @@ export type Role = 'admin' | 'supervisor' | 'staff' | 'client';
 
 export interface UserDoc {
   role: Role;
-  status: 'active' | 'inactive' | 'exited';
+  status: 'active' | 'inactive' | 'exited' | 'deleted';
   name: string;
   email: string;
   phone?: string | null;

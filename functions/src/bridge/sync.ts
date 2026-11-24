@@ -116,7 +116,8 @@ async function retire(collection: string, id: string, opts: SyncOptions, status 
     if (opts.apply) await ref.delete();
     return { action: 'delete', target: path };
   }
-  if (current.status === status) return { action: 'unchanged', target: path };
+  // A client who deleted their account stays deleted.
+  if (current.status === status || current.status === 'deleted') return { action: 'unchanged', target: path };
   if (opts.apply) await ref.update({ status, updatedAt: FieldValue.serverTimestamp(), updatedBy: 'admin-sync' });
   return { action: 'deactivate', target: path };
 }

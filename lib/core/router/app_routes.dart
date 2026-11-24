@@ -13,11 +13,17 @@ abstract final class AppRoutes {
 
   static const staffHome = '/staff/home';
   static const staffTasks = '/staff/tasks';
+
+  /// The tasks page on one tab: `today`, `upcoming` or `submitted`.
+  static String staffTasksTab(String tab) => '$staffTasks?tab=$tab';
   static const staffClock = '/staff/clock';
   static const staffParts = '/staff/parts';
 
   static const supervisorHome = '/supervisor/home';
   static const supervisorReview = '/supervisor/review';
+
+  /// The review page on one tab: `review` or `team`.
+  static String supervisorReviewTab(String tab) => '$supervisorReview?tab=$tab';
   static const supervisorClock = '/supervisor/clock';
   static const supervisorAlerts = '/supervisor/alerts';
 

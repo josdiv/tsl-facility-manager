@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../../core/firebase/firebase_env.dart';
 import '../../../core/media/photo_service.dart';
 import '../../../core/session/app_role.dart';
+import '../../../core/utils/streams.dart';
 import '../../attendance/domain/attendance.dart';
 import '../../profile/domain/user_profile.dart';
 import '../domain/work_order.dart';
@@ -101,29 +102,42 @@ class FirestoreWorkOrderRepository implements WorkOrderRepository {
   @override
   Stream<List<WorkOrder>> watch(UserProfile? user) {
     if (user == null) return Stream.value(const []);
-    final query = switch (user.role) {
-      AppRole.client =>
+    return switch (user.role) {
+      AppRole.client => _ordersFrom(
         _orders
             .where('clientId', isEqualTo: user.uid)
             .orderBy('createdAt', descending: true),
-      AppRole.staff =>
+      ),
+      AppRole.staff => _ordersFrom(
         _orders.where('assignedToId', isEqualTo: user.uid).orderBy('dueAt'),
-      AppRole.supervisor =>
-        _orders
-            .where('locationId', isEqualTo: user.locationId)
-            .orderBy('dueAt'),
+      ),
+      // Their facility's jobs, plus any job elsewhere the dashboard names
+      // them on as supervisor.
+      AppRole.supervisor => combineLatest2(
+        _ordersFrom(
+          _orders
+              .where('locationId', isEqualTo: user.locationId)
+              .orderBy('dueAt'),
+        ),
+        _ordersFrom(_orders.where('supervisorId', isEqualTo: user.uid)),
+        (here, named) =>
+            [...here, ...named.where((o) => !here.any((h) => h.id == o.id))]
+              ..sort((a, b) => a.due.compareTo(b.due)),
+      ),
     };
-    return query.snapshots().map((snap) {
-      final orders = <WorkOrder>[];
-      for (final doc in snap.docs) {
-        final order = workOrderFromDoc(doc);
-        if (order == null) continue;
-        _docIds[order.id] = doc.id;
-        orders.add(order);
-      }
-      return orders;
-    });
   }
+
+  Stream<List<WorkOrder>> _ordersFrom(Query<Map<String, dynamic>> query) =>
+      query.snapshots().map((snap) {
+        final orders = <WorkOrder>[];
+        for (final doc in snap.docs) {
+          final order = workOrderFromDoc(doc);
+          if (order == null) continue;
+          _docIds[order.id] = doc.id;
+          orders.add(order);
+        }
+        return orders;
+      });
 
   @override
   Stream<List<WorkOrderEvent>> watchHistory(String id) {
@@ -344,6 +358,7 @@ WorkOrder? workOrderFromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     status: status,
     location: d['locationName'] as String? ?? '',
     zone: d['zoneName'] as String? ?? '',
+    asset: d['assetName'] as String? ?? '',
     locationId: d['locationId'] as String?,
     zoneId: d['zoneId'] as String?,
     due: _date(d['dueAt']) ?? DateTime.now(),

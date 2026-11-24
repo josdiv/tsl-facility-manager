@@ -266,3 +266,59 @@ export const createUser = onCall({ region: REGION }, async (request) => {
   }
   return { uid: account.uid };
 });
+
+/**
+ * A client deletes their own account, as the app stores require for
+ * accounts made in the app. Their sign-in, personal details, notifications,
+ * devices and support chat go, as does their record in the dashboard's
+ * `client` collection. Requests they reported stay with the facility team
+ * as business records. Staff and supervisor accounts are managed in the
+ * dashboard.
+ */
+export const deleteMyAccount = onCall({ region: REGION }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'Please sign in again.');
+  const ref = db.doc(`users/${uid}`);
+  const user = (await ref.get()).data() as UserDoc | undefined;
+  if (!user || user.status === 'deleted') {
+    throw new HttpsError('not-found', 'This account has already been deleted.');
+  }
+  if (user.role !== 'client') {
+    throw new HttpsError(
+      'permission-denied',
+      'Staff and supervisor accounts are managed by your administrator.',
+    );
+  }
+
+  // The record is anonymised first, so the bridge's reaction to the
+  // dashboard record going away finds nothing personal left to copy.
+  await ref.set(
+    {
+      status: 'deleted',
+      name: 'Deleted client',
+      email: null,
+      phone: null,
+      locationId: null,
+      locationName: null,
+      onShift: false,
+      deletedAt: serverTime(),
+      updatedAt: serverTime(),
+      updatedBy: uid,
+    },
+    { merge: true },
+  );
+  await Promise.all([
+    db.recursiveDelete(ref.collection('notifications')),
+    db.recursiveDelete(ref.collection('fcmTokens')),
+    db.recursiveDelete(db.doc(`supportThreads/${uid}`)),
+    user.email ? db.doc(`emailCodes/${emailKey(user.email)}`).delete() : Promise.resolve(),
+  ]);
+  // Their own dashboard record (clients who signed up in the app).
+  const adminRecord = adminDb.doc(`client/${uid}`);
+  if ((await adminRecord.get()).exists) await adminRecord.delete();
+  await auth.deleteUser(uid).catch((error) => {
+    if (error.code !== 'auth/user-not-found') throw error;
+  });
+  logger.info(`client ${uid} deleted their account`);
+  return { deleted: true };
+});

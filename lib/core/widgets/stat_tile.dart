@@ -12,6 +12,7 @@ class StatTile extends StatelessWidget {
     this.iconColor = AppColors.primary,
     this.iconBackground = AppColors.primarySoft,
     this.captionColor = AppColors.muted,
+    this.onTap,
     super.key,
   });
 
@@ -23,10 +24,14 @@ class StatTile extends StatelessWidget {
   final Color iconBackground;
   final Color captionColor;
 
+  /// Opens what the number counts.
+  final VoidCallback? onTap;
+
   @override
   Widget build(BuildContext context) {
     return AppCard(
       margin: EdgeInsets.zero,
+      onTap: onTap,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/router/app_routes.dart';
 import '../../../core/session/app_role.dart';
+import '../../attendance/presentation/shift_actions.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/utils/date_labels.dart';
 import '../../../core/widgets/app_card.dart';
@@ -103,6 +104,8 @@ class ChatPage extends StatelessWidget {
         chat: WorkOrderChat(order.id),
         title: 'Messages',
         banner: '${order.id} · ${order.title}',
+        // Staff and supervisors act on a task only while clocked in.
+        needsShift: role != AppRole.client,
       ),
     );
   }
@@ -135,6 +138,7 @@ class ChatThread extends StatefulWidget {
     required this.title,
     required this.banner,
     this.emptyMessage = 'No messages yet. Send the first one below.',
+    this.needsShift = false,
     super.key,
   });
 
@@ -143,6 +147,10 @@ class ChatThread extends StatefulWidget {
   final String title;
   final String banner;
   final String emptyMessage;
+
+  /// Sending needs a started shift (work order chats for staff and
+  /// supervisors).
+  final bool needsShift;
 
   @override
   State<ChatThread> createState() => _ChatThreadState();
@@ -184,6 +192,7 @@ class _ChatThreadState extends State<ChatThread> {
   @override
   Widget build(BuildContext context) {
     final me = context.profileOf(widget.role);
+    final offShift = widget.needsShift && !isOnShift(context, widget.role);
     return Scaffold(
       appBar: AppBar(title: Text(widget.title)),
       body: SafeArea(
@@ -222,40 +231,62 @@ class _ChatThreadState extends State<ChatThread> {
                           message,
                           mine: message.senderId == me.uid,
                           now: now,
+                          viewer: widget.role,
                         ),
                     ],
                   );
                 },
               ),
             ),
-            ColoredBox(
-              color: AppColors.surface,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _draft,
-                        minLines: 1,
-                        maxLines: 4,
-                        maxLength: 2000,
-                        textCapitalization: TextCapitalization.sentences,
-                        decoration: const InputDecoration(
-                          hintText: 'Type a message…',
-                          counterText: '',
+            if (offShift)
+              ColoredBox(
+                color: AppColors.surface,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Clock in to send messages about this task.',
                         ),
                       ),
-                    ),
-                    IconButton(
-                      tooltip: 'Send message',
-                      onPressed: () => _send(me),
-                      icon: const Icon(Icons.send, color: AppColors.primary),
-                    ),
-                  ],
+                      TextButton(
+                        onPressed: () => context.go(clockRoute(widget.role)),
+                        child: const Text('Clock in'),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else
+              ColoredBox(
+                color: AppColors.surface,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _draft,
+                          minLines: 1,
+                          maxLines: 4,
+                          maxLength: 2000,
+                          textCapitalization: TextCapitalization.sentences,
+                          decoration: const InputDecoration(
+                            hintText: 'Type a message…',
+                            counterText: '',
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Send message',
+                        onPressed: () => _send(me),
+                        icon: const Icon(Icons.send, color: AppColors.primary),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
           ],
         ),
       ),
@@ -264,20 +295,39 @@ class _ChatThreadState extends State<ChatThread> {
 }
 
 class _Bubble extends StatelessWidget {
-  const _Bubble(this.message, {required this.mine, required this.now});
+  const _Bubble(
+    this.message, {
+    required this.mine,
+    required this.now,
+    required this.viewer,
+  });
 
   final ChatMessage message;
   final bool mine;
   final DateTime now;
 
-  /// "Sarah · Facility team" for supervisors and admins, otherwise the first
-  /// name.
+  /// Who is reading: clients see the facility team, the team sees who
+  /// each person is.
+  final AppRole viewer;
+
   String get _sender {
-    final first = message.senderName.trim().split(RegExp(r'\s+')).first;
-    return switch (message.senderRole) {
-      'supervisor' || 'admin' => '$first · Facility team',
-      _ => first,
+    final name = message.senderName.trim();
+    if (viewer == AppRole.client) {
+      final first = name.split(RegExp(r'\s+')).first;
+      return switch (message.senderRole) {
+        'supervisor' || 'admin' => '$first · Facility team',
+        _ => first,
+      };
+    }
+    // "Bola Shaw · Client", "Mono Technician · Staff".
+    final label = switch (message.senderRole) {
+      'client' => 'Client',
+      'staff' => 'Staff',
+      'supervisor' => 'Supervisor',
+      'admin' => 'Admin',
+      _ => null,
     };
+    return label == null ? name : '$name · $label';
   }
 
   @override

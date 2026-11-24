@@ -42,6 +42,9 @@ abstract interface class AuthRepository {
 
   Future<void> sendPasswordReset(String email);
 
+  /// Permanently deletes the signed-in client's account, then signs out.
+  Future<void> deleteAccount();
+
   Future<void> signOut();
 
   /// Saves the editable parts of the signed-in user's profile.

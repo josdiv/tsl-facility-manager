@@ -20,9 +20,15 @@ import 'package:go_router/go_router.dart';
 import 'role_shell.dart';
 
 StatefulShellBranch _tab(String path, Widget Function() page) =>
-    StatefulShellBranch(
-      routes: [GoRoute(path: path, builder: (_, _) => page())],
-    );
+    _tabWith(path, (_) => page());
+
+/// A tab whose page reads the route, e.g. `?tab=` to open one of its tabs.
+StatefulShellBranch _tabWith(
+  String path,
+  Widget Function(GoRouterState state) page,
+) => StatefulShellBranch(
+  routes: [GoRoute(path: path, builder: (_, state) => page(state))],
+);
 
 StatefulShellRoute _shell(AppRole role, List<StatefulShellBranch> branches) =>
     StatefulShellRoute.indexedStack(
@@ -106,7 +112,13 @@ GoRouter createAppRouter({
       ]),
       _shell(AppRole.staff, [
         _tab(AppRoutes.staffHome, () => const StaffHomePage()),
-        _tab(AppRoutes.staffTasks, () => const AssignedTasksPage()),
+        _tabWith(
+          AppRoutes.staffTasks,
+          (state) => AssignedTasksPage(
+            key: ValueKey(state.uri.queryParameters['tab']),
+            initialTab: state.uri.queryParameters['tab'],
+          ),
+        ),
         _tab(
           AppRoutes.staffClock,
           () => const AttendancePage(role: AppRole.staff),
@@ -115,7 +127,13 @@ GoRouter createAppRouter({
       ]),
       _shell(AppRole.supervisor, [
         _tab(AppRoutes.supervisorHome, () => const SupervisorHomePage()),
-        _tab(AppRoutes.supervisorReview, () => const ReviewListPage()),
+        _tabWith(
+          AppRoutes.supervisorReview,
+          (state) => ReviewListPage(
+            key: ValueKey(state.uri.queryParameters['tab']),
+            initialTab: state.uri.queryParameters['tab'],
+          ),
+        ),
         _tab(
           AppRoutes.supervisorClock,
           () => const AttendancePage(role: AppRole.supervisor),

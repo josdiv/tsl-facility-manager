@@ -26,11 +26,11 @@ const audit = { createdAt: past, createdBy: 'system', updatedAt: past, updatedBy
 
 export const people = {
   admin: { role: 'admin', name: 'Ada Admin', locationId: null },
-  sarah: { role: 'supervisor', name: 'Sarah James', locationId: 'marina' },
-  musa: { role: 'supervisor', name: 'Musa Bello', locationId: 'cedar' },
-  emeka: { role: 'staff', name: 'Emeka Okafor', locationId: 'marina' },
+  sarah: { role: 'supervisor', name: 'Sarah James', locationId: 'marina', onShift: true },
+  musa: { role: 'supervisor', name: 'Musa Bello', locationId: 'cedar', onShift: true },
+  emeka: { role: 'staff', name: 'Emeka Okafor', locationId: 'marina', onShift: true },
   tunde: { role: 'staff', name: 'Tunde Bakare', locationId: 'marina' },
-  grace: { role: 'staff', name: 'Grace Eze', locationId: 'cedar' },
+  grace: { role: 'staff', name: 'Grace Eze', locationId: 'cedar', onShift: true },
   gone: { role: 'staff', name: 'Former Staff', locationId: 'marina', status: 'exited' },
   daniel: { role: 'client', name: 'Daniel Clarke', locationId: 'marina', companyId: 'acme' },
   ngozi: { role: 'client', name: 'Ngozi Obi', locationId: 'marina', companyId: 'acme' },

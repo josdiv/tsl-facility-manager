@@ -23,18 +23,21 @@ describe('work order photos', () => {
     await assertFails(upload('locked', marina('brand-new', 'report', 'leak.jpg')));
   });
 
-  it('lets staff upload proof of work at their own location only', async () => {
+  it('lets staff upload proof of work, also for a job at another facility', async () => {
     await assertSucceeds(upload('emeka', marina('working', 'work', 'after.jpg')));
-    await assertFails(upload('grace', marina('working', 'work', 'after.jpg')));
+    // The dashboard can give Grace (Cedar) a job at Marina.
+    await assertSucceeds(upload('grace', marina('working', 'work', 'grace.jpg')));
     await assertFails(upload('emeka', marina('working', 'report', 'after.jpg')));
     await assertFails(upload('emeka', marina('working', 'inspection', 'after.jpg')));
     await assertFails(upload('gone', marina('working', 'work', 'after.jpg')));
   });
 
-  it('lets the location\'s supervisor upload return and inspection photos', async () => {
+  it('lets supervisors upload return and inspection photos', async () => {
     await assertSucceeds(upload('sarah', marina('review', 'return', 'issue.jpg')));
     await assertSucceeds(upload('sarah', marina('review', 'inspection', 'closed.jpg')));
-    await assertFails(upload('musa', marina('review', 'return', 'issue.jpg')));
+    // A supervisor the dashboard names on a job at another facility.
+    await assertSucceeds(upload('musa', marina('review', 'return', 'musa.jpg')));
+    await assertFails(upload('daniel', marina('review', 'return', 'issue.jpg')));
     await assertFails(upload('sarah', marina('review', 'work', 'closed.jpg')));
   });
 
@@ -49,11 +52,12 @@ describe('work order photos', () => {
     await assertFails(uploadBytes(ref(env.unauthenticatedContext().storage(), marina('x', 'report', 'a.jpg')), jpeg, { contentType: 'image/jpeg' }));
   });
 
-  it('lets people at the location view its photos', async () => {
+  it('lets active accounts view work order photos, wherever they are based', async () => {
     const path = marina('open', 'report', 'leak.jpg');
     await env.withSecurityRulesDisabled((c) => uploadBytes(ref(c.storage(), path), jpeg, { contentType: 'image/jpeg' }));
-    for (const uid of ['daniel', 'emeka', 'sarah', 'admin']) await assertSucceeds(getBytes(ref(storageAs(env, uid), path)));
-    for (const uid of ['grace', 'musa', 'locked', 'gone']) await assertFails(getBytes(ref(storageAs(env, uid), path)));
+    // Grace and Musa work at Cedar but can be given a Marina job.
+    for (const uid of ['daniel', 'emeka', 'sarah', 'admin', 'grace', 'musa']) await assertSucceeds(getBytes(ref(storageAs(env, uid), path)));
+    for (const uid of ['locked', 'gone']) await assertFails(getBytes(ref(storageAs(env, uid), path)));
   });
 });
 

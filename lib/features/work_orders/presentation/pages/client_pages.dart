@@ -333,7 +333,11 @@ class _ReportIssuePageState extends State<ReportIssuePage> {
       _media = const [];
       _formVersion++;
     });
-    context.push(AppRoutes.clientRequest(id));
+    // Open it from the requests tab, so back goes to the list rather than
+    // to a fresh form.
+    final router = GoRouter.of(context);
+    router.go(AppRoutes.clientRequests);
+    router.push(AppRoutes.clientRequest(id));
   }
 
   void _onFailed(BuildContext context, WorkOrdersState state) {
@@ -506,7 +510,7 @@ class RequestTrackingPage extends StatelessWidget {
                       ],
                     ),
                   const SizedBox(height: 4),
-                  KeyValueRow('Location', '${order.location} · ${order.zone}'),
+                  KeyValueRow('Location', order.place),
                   KeyValueRow(
                     'Expected response',
                     dateTimeLabel(order.due, now),
@@ -537,6 +541,24 @@ class RequestTrackingPage extends StatelessWidget {
                 ],
               ),
             ),
+            // The technician's proof of work; the supervisor's inspection
+            // photos are in the inspection card.
+            if (order.workMedia.isNotEmpty)
+              AppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Work photos', style: text.titleMedium),
+                    if (order.workNote case final note? when note.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(note, style: text.bodyMedium),
+                      ),
+                    const SizedBox(height: 12),
+                    MediaGrid(order.workMedia),
+                  ],
+                ),
+              ),
             InspectionCard(order),
             if (order.reportMedia.isNotEmpty)
               AppCard(
