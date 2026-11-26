@@ -42,5 +42,11 @@ from the sample data on a 1080×1920 emulator with Android demo mode).
 
 - The very first build of a new app has to be uploaded in Play Console by
   hand; after that Fastlane can upload.
+- While the app is still a draft (before its first approval), Google only
+  accepts draft releases, and supply's promote can't make one from a
+  completed internal release. The first production release (1.0.1, 4) was
+  created as a draft through the Publishing API on 26 Nov 2026 and sent for
+  review from Play Console. After approval, `fastlane android promote` works
+  normally.
 - A full disk makes Gradle fail with lint "Unexpected lint invalid
   arguments" errors before the real "No space left on device" one.

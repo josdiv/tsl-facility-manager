@@ -73,6 +73,10 @@ platform :android do
       skip_upload_changelogs: true,
       # Staged rollout, e.g. promote rollout:0.2 for 20%; omit for 100%.
       rollout: options[:rollout],
+      # While the app is still a draft (before its first review), Google only
+      # accepts draft releases: `promote release_status:draft`, then send it
+      # for review in Play Console (Publishing overview).
+      release_status: options[:release_status],
     )
     UI.success("Promoted internal -> production")
   end
