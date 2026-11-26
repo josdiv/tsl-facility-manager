@@ -238,7 +238,8 @@ service cloud.firestore {
     }
 
     match /assets/{assetId} {
-      allow read: if isAdmin() || isFieldTeam();
+      // Clients pick the equipment at fault when reporting an issue.
+      allow read: if isAdmin() || isFieldTeam() || (isClient() && active());
       allow create: if isAdmin() && auditCreate() && validAsset() && !('ref' in incoming());
       allow update: if isAdmin() && auditUpdate() && validAsset() && !changedKeys().hasAny(['ref']);
       allow delete: if isAdmin();

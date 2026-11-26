@@ -39,6 +39,20 @@ class Zone extends Equatable {
   List<Object?> get props => [id, name];
 }
 
+/// A piece of equipment at a facility, which a client can report a fault on.
+class Asset extends Equatable {
+  const Asset(this.id, this.name, {this.zone});
+
+  final String id;
+  final String name;
+
+  /// Where it is, when the dashboard has placed it in a zone.
+  final Zone? zone;
+
+  @override
+  List<Object?> get props => [id, name, zone];
+}
+
 /// What a client fills in to report an issue.
 class IssueDraft extends Equatable {
   const IssueDraft({
@@ -46,6 +60,7 @@ class IssueDraft extends Equatable {
     required this.description,
     required this.location,
     this.zone,
+    this.asset,
     this.media = const [],
   });
 
@@ -55,10 +70,13 @@ class IssueDraft extends Equatable {
 
   /// Null at a facility with no zones set up yet.
   final Zone? zone;
+
+  /// The equipment at fault, if the client picked one.
+  final Asset? asset;
   final List<String> media;
 
   @override
-  List<Object?> get props => [title, description, location, zone, media];
+  List<Object?> get props => [title, description, location, zone, asset, media];
 }
 
 /// Why a work order action failed, in words the app can show.
@@ -92,6 +110,9 @@ abstract interface class WorkOrderRepository {
 
   /// The zones at a facility, by name.
   Future<List<Zone>> zones(String locationId);
+
+  /// The active equipment at a facility, with the zone each is in.
+  Future<List<Asset>> assets(String locationId);
 
   /// Staff at a facility, by name.
   Stream<List<TeamMember>> watchTeam(String locationId);

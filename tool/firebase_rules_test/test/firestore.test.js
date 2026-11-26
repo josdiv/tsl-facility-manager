@@ -280,12 +280,13 @@ describe('users and profiles', () => {
 });
 
 describe('reference data', () => {
-  it('shows clients every facility and its zones, but not assets', async () => {
+  it('shows clients every facility with its zones and assets', async () => {
     const db = as(env, 'daniel');
     await assertSucceeds(getDoc(doc(db, 'locations/cedar')));
     await assertSucceeds(getDocs(query(collection(db, 'locations'), where('status', '==', 'active'))));
     await assertSucceeds(getDocs(query(collection(db, 'zones'), where('locationId', '==', 'cedar'))));
-    await assertFails(getDocs(collection(db, 'assets')));
+    await assertSucceeds(getDocs(query(collection(db, 'assets'), where('locationId', '==', 'marina'))));
+    await assertFails(getDocs(collection(as(env, 'locked'), 'assets')));
     await assertFails(getDoc(doc(as(env, 'locked'), 'locations/marina')));
   });
 

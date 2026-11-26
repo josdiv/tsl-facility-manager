@@ -186,10 +186,12 @@ class _ReportIssuePageState extends State<ReportIssuePage> {
   final _title = TextEditingController();
   final _description = TextEditingController();
   var _facilities = const <Facility>[];
-  var _zones = const <Zone>[];
+
+  /// What the issue is about: equipment (with its zone in front) or a zone.
+  var _targets = const <_ReportTarget>[];
   Facility? _location;
-  Zone? _zone;
-  var _zonesLoading = false;
+  _ReportTarget? _target;
+  var _targetsLoading = false;
 
   /// Where the phone is, once it can say. Facilities are then listed
   /// nearest first.
@@ -278,28 +280,33 @@ class _ReportIssuePageState extends State<ReportIssuePage> {
   Future<void> _pickLocation(Facility? location) async {
     setState(() {
       _location = location;
-      _zones = const [];
-      _zone = null;
-      _zonesLoading = location != null;
+      _targets = const [];
+      _target = null;
+      _targetsLoading = location != null;
     });
     if (location == null) return;
-    final zones = await context.read<WorkOrderRepository>().zones(location.id);
+    final repository = context.read<WorkOrderRepository>();
+    final (zones, assets) = await (
+      repository.zones(location.id),
+      repository.assets(location.id),
+    ).wait;
     if (!mounted || _location != location) return;
+    final targets = _ReportTarget.forFacility(zones, assets);
     setState(() {
-      _zones = zones;
-      _zone = zones.firstOrNull;
-      _zonesLoading = false;
+      _targets = targets;
+      _target = targets.firstOrNull;
+      _targetsLoading = false;
     });
   }
 
   void _submit() {
     if (_sending || !_form.currentState!.validate()) return;
     final location = _location;
-    final zone = _zone;
-    // A facility without zones takes reports for the whole site.
+    final target = _target;
+    // A facility without zones or equipment takes reports for the whole site.
     if (location == null ||
-        _zonesLoading ||
-        (zone == null && _zones.isNotEmpty)) {
+        _targetsLoading ||
+        (target == null && _targets.isNotEmpty)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Choose a location and zone first.')),
       );
@@ -313,7 +320,8 @@ class _ReportIssuePageState extends State<ReportIssuePage> {
           title: _title.text.trim(),
           description: _description.text.trim(),
           location: location,
-          zone: zone,
+          zone: target?.zone,
+          asset: target?.asset,
           media: _media,
         ),
         context.read<ProfileCubit>().of(AppRole.client),
@@ -406,14 +414,16 @@ class _ReportIssuePageState extends State<ReportIssuePage> {
                       padding: const EdgeInsets.only(bottom: 16),
                       child: note,
                     ),
-                if (_zones.isNotEmpty)
+                if (_targets.isNotEmpty)
                   LabelledDropdown(
-                    // A new location brings its own zones, so start afresh.
+                    // A new location brings its own list, so start afresh.
                     key: ValueKey(_location),
-                    label: 'Building / zone',
-                    options: [for (final z in _zones) z.name],
+                    label: _targets.any((t) => t.asset != null)
+                        ? 'Asset / zone'
+                        : 'Building / zone',
+                    options: [for (final t in _targets) t.label],
                     onChanged: (value) =>
-                        _zone = _zones.firstWhere((z) => z.name == value),
+                        _target = _targets.firstWhere((t) => t.label == value),
                   ),
                 LabelledTextField(
                   label: 'Issue title',
@@ -594,3 +604,48 @@ String _initials(String name) => name
     .take(2)
     .map((part) => part[0])
     .join();
+
+/// One choice in the report form's "Asset / zone" list.
+class _ReportTarget {
+  const _ReportTarget(this.label, {this.zone, this.asset});
+
+  final String label;
+  final Zone? zone;
+  final Asset? asset;
+
+  /// A facility's equipment, each with its zone in front ("Canteen Block ·
+  /// Air Conditioner"), then an "Other issue" choice per zone for faults
+  /// that aren't about a piece of equipment. Without equipment, just the
+  /// zones, as before.
+  static List<_ReportTarget> forFacility(List<Zone> zones, List<Asset> assets) {
+    if (assets.isEmpty) {
+      return [for (final zone in zones) _ReportTarget(zone.name, zone: zone)];
+    }
+    String place(Zone? zone) =>
+        zone == null || zone.name.isEmpty ? 'General' : zone.name;
+    final sorted = [...assets]
+      ..sort((a, b) {
+        final byZone = place(a.zone).compareTo(place(b.zone));
+        return byZone != 0 ? byZone : a.name.compareTo(b.name);
+      });
+    final targets = <_ReportTarget>[];
+    final used = <String>{};
+    for (final asset in sorted) {
+      var label = '${place(asset.zone)} · ${asset.name}';
+      // Two identical items in one zone stay apart by their reference.
+      if (!used.add(label)) {
+        label = '$label (${asset.id})';
+        used.add(label);
+      }
+      targets.add(_ReportTarget(label, zone: asset.zone, asset: asset));
+    }
+    if (zones.isEmpty) {
+      targets.add(const _ReportTarget('Other issue'));
+    } else {
+      for (final zone in zones) {
+        targets.add(_ReportTarget('${zone.name} · Other issue', zone: zone));
+      }
+    }
+    return targets;
+  }
+}

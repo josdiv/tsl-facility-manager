@@ -49,7 +49,9 @@ export const reportIssue = onCall({ region: REGION }, async (request) => {
   const description = text(data.description, 'Description', 1, 4000);
   const locationId = text(data.locationId, 'Location', 1, 128);
   // Optional: many facilities have no zones set up in the dashboard yet.
-  const zoneId = data.zoneId == null || data.zoneId === '' ? null : text(data.zoneId, 'Zone', 1, 128);
+  let zoneId = data.zoneId == null || data.zoneId === '' ? null : text(data.zoneId, 'Zone', 1, 128);
+  // Optional: the equipment at fault. Its zone comes from the asset itself.
+  const assetId = data.assetId == null || data.assetId === '' ? null : text(data.assetId, 'Asset', 1, 128);
   const reportPhotos = photoPaths(data.photos, locationId, workOrderId, 'report', 4);
   // Clients report from the facility itself, which keeps out spam reports.
   const position = readPosition(data.position);
@@ -58,6 +60,14 @@ export const reportIssue = onCall({ region: REGION }, async (request) => {
   const usageRef = companyRef.collection('usage').doc(lagosMonth());
 
   return db.runTransaction(async (tx) => {
+    const asset = assetId ? await tx.get(db.doc(`assets/${assetId}`)) : null;
+    if (asset) {
+      const a = asset.data();
+      if (!a || a.locationId !== locationId || a.status === 'inactive') {
+        throw new HttpsError('invalid-argument', 'That equipment isn’t at this facility.');
+      }
+      zoneId = typeof a.zoneId === 'string' && a.zoneId ? a.zoneId : zoneId;
+    }
     const [company, location, zone, usage, existing] = await Promise.all([
       tx.get(companyRef),
       tx.get(db.doc(`locations/${locationId}`)),
@@ -112,8 +122,8 @@ export const reportIssue = onCall({ region: REGION }, async (request) => {
       locationName: locationData.name,
       zoneId,
       zoneName: zone ? zone.data()!.name : null,
-      assetId: null,
-      assetName: null,
+      assetId: asset ? asset.id : null,
+      assetName: asset ? (asset.data()!.equipmentName ?? asset.id) : null,
       companyId: user.companyId,
       companyName: companyData.name,
       clientId: uid,

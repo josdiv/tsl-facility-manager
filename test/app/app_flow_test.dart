@@ -200,6 +200,32 @@ void main() {
     expect(find.text('Tell us what’s wrong'), findsNothing);
   });
 
+  testWidgets('clients pick the equipment at fault, zone first', (
+    tester,
+  ) async {
+    await pumpApp(tester, AppRoutes.clientReport, size: const Size(360, 2400));
+    expect(find.text('Asset / zone'), findsOneWidget);
+
+    await tester.tap(find.text('Car park · Standby generator'));
+    await tester.pumpAndSettle();
+    for (final option in [
+      'Car park · Standby generator',
+      'Reception · Passenger lift 1',
+      'Tower A · Floor 3 · Air handling unit AHU-02',
+      'Reception · Other issue',
+    ]) {
+      expect(find.text(option), findsWidgets, reason: option);
+    }
+    await tester.tap(find.text('Reception · Passenger lift 1').last);
+    await tester.pumpAndSettle();
+
+    await enterField(tester, 'Issue title', 'Lift stuck');
+    await enterField(tester, 'Description', 'Stopped between floors 2 and 3');
+    await tapText(tester, 'Submit issue');
+    expect(find.text('Request tracking'), findsOneWidget);
+    expect(find.textContaining('Reception'), findsWidgets);
+  });
+
   testWidgets('staff must clock in before starting work', (tester) async {
     await pumpApp(tester, AppRoutes.staffHome);
 

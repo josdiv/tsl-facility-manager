@@ -99,6 +99,7 @@ class InMemoryWorkOrderRepository implements WorkOrderRepository {
         status: WorkOrderStatus.open,
         location: draft.location.name,
         zone: draft.zone?.name ?? '',
+        asset: draft.asset?.name ?? '',
         locationId: draft.location.id,
         zoneId: draft.zone?.id,
         due: now.add(const Duration(hours: 24)),
@@ -124,6 +125,30 @@ class InMemoryWorkOrderRepository implements WorkOrderRepository {
   @override
   Future<List<Zone>> zones(String locationId) async =>
       _zones[locationId] ?? const [];
+
+  static const _assets = {
+    'marina': [
+      Asset(
+        'AHU-02',
+        'Air handling unit AHU-02',
+        zone: Zone('marina-a3', 'Tower A · Floor 3'),
+      ),
+      Asset(
+        'LIFT-1',
+        'Passenger lift 1',
+        zone: Zone('marina-reception', 'Reception'),
+      ),
+      Asset(
+        'GEN-1',
+        'Standby generator',
+        zone: Zone('marina-carpark', 'Car park'),
+      ),
+    ],
+  };
+
+  @override
+  Future<List<Asset>> assets(String locationId) async =>
+      _assets[locationId] ?? const [];
 
   @override
   Stream<List<TeamMember>> watchTeam(String locationId) => Stream.value(team);

@@ -210,6 +210,7 @@ class FirestoreWorkOrderRepository implements WorkOrderRepository {
             'description': draft.description,
             'locationId': draft.location.id,
             'zoneId': draft.zone?.id,
+            'assetId': draft.asset?.id,
             'photos': [
               for (final photo in photos)
                 photoPath(locationId, docId, 'report', photo),
@@ -286,6 +287,28 @@ class FirestoreWorkOrderRepository implements WorkOrderRepository {
       for (final doc in snap.docs)
         if (doc.data()['status'] != 'inactive')
           Zone(doc.id, doc.data()['name'] as String),
+    ]..sort((a, b) => a.name.compareTo(b.name));
+  }
+
+  @override
+  Future<List<Asset>> assets(String locationId) async {
+    final snap = await _db
+        .collection('assets')
+        .where('locationId', isEqualTo: locationId)
+        .get();
+    return [
+      for (final doc in snap.docs)
+        if (doc.data()['status'] != 'inactive')
+          Asset(
+            doc.id,
+            doc.data()['equipmentName'] as String? ?? doc.id,
+            zone: doc.data()['zoneId'] is String
+                ? Zone(
+                    doc.data()['zoneId'] as String,
+                    doc.data()['zoneName'] as String? ?? '',
+                  )
+                : null,
+          ),
     ]..sort((a, b) => a.name.compareTo(b.name));
   }
 
