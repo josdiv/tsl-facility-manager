@@ -131,5 +131,7 @@ abstract interface class AttendanceRepository {
   Future<void> clockIn(UserProfile user, LocationFix fix);
 
   /// Ends the open shift, recording where if a reading is available.
-  Future<void> clockOut(UserProfile user, {LocationFix? fix});
+  /// Ends the shift. Like clocking in, it needs the phone at the facility;
+  /// the server checks the distance.
+  Future<void> clockOut(UserProfile user, LocationFix fix);
 }

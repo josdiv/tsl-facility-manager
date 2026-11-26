@@ -21,6 +21,29 @@ String afterClockInRoute(AppRole role) => role == AppRole.supervisor
     ? AppRoutes.supervisorReview
     : AppRoutes.staffTasks;
 
+/// The phone's position for ending a shift, which (like starting one) has to
+/// happen at the facility. Throws [AttendanceFailure] saying what to fix.
+Future<LocationFix> shiftFix(LocationService location) async {
+  try {
+    await location.ensurePermission();
+    return await location.currentFix().timeout(const Duration(seconds: 15));
+  } on LocationUnavailable catch (e) {
+    throw AttendanceFailure(switch (e.problem) {
+      LocationProblem.serviceOff =>
+        'Turn on your phone’s location to clock out. You need to be at the '
+            'facility.',
+      _ =>
+        'Allow location access to clock out. It confirms you’re at the '
+            'facility.',
+    });
+  } on Object {
+    throw const AttendanceFailure(
+      'We couldn’t get your location. Move near a window or outdoors and try '
+      'again.',
+    );
+  }
+}
+
 /// Asks before starting or ending a shift. True when confirmed.
 Future<bool> confirmShiftChange(
   BuildContext context, {
@@ -81,16 +104,9 @@ class _ShiftCardState extends State<ShiftCard> {
     }
     setState(() => _busy = true);
     try {
-      // Where they clocked out, if the phone can say; ending the shift
-      // doesn't depend on it.
-      LocationFix? fix;
-      try {
-        await location.ensurePermission();
-        fix = await location.currentFix().timeout(const Duration(seconds: 10));
-      } on Object {
-        fix = null;
-      }
-      await attendance.clockOut(user, fix: fix);
+      // Clocking out needs the phone at the facility, as clocking in does.
+      final fix = await shiftFix(location);
+      await attendance.clockOut(user, fix);
       messenger
         ..hideCurrentSnackBar()
         ..showSnackBar(const SnackBar(content: Text('Shift ended')));

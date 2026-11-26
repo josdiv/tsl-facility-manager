@@ -533,6 +533,23 @@ void main() {
     expect(find.text('Pending approval'), findsOneWidget);
   });
 
+  testWidgets('supervisors request parts from their own Parts tab', (
+    tester,
+  ) async {
+    await pumpApp(
+      tester,
+      AppRoutes.supervisorParts,
+      size: const Size(360, 1600),
+    );
+    expect(find.text('Parts'), findsWidgets);
+    await tapText(tester, 'Request parts');
+    await enterField(tester, 'Quantity', '3');
+    await enterField(tester, 'Reason', 'Spare filters for the plant room');
+    await tapText(tester, 'Submit requisition');
+    expect(find.text('Request submitted for admin approval'), findsOneWidget);
+    expect(find.text('3 × HVAC air filter'), findsOneWidget);
+  });
+
   testWidgets('a task opens the parts form with its work order chosen', (
     tester,
   ) async {
@@ -750,6 +767,26 @@ void main() {
     expect(find.textContaining('Work order created'), findsOneWidget);
     expect(find.text('Corridor light out'), findsWidgets);
     expect(find.textContaining('Emeka Okafor'), findsWidgets);
+  });
+
+  testWidgets('clocking out goes through the same location check', (
+    tester,
+  ) async {
+    await pumpApp(
+      tester,
+      AppRoutes.staffClock,
+      size: const Size(360, 2400),
+      onShift: AppRole.staff,
+    );
+    expect(find.textContaining('Your shift is running'), findsOneWidget);
+    expect(
+      find.text('Location verified. You are inside the facility boundary.'),
+      findsOneWidget,
+    );
+    await tapText(tester, 'Verify & clock out');
+    await tester.tap(find.widgetWithText(FilledButton, 'Clock out'));
+    await tester.pumpAndSettle();
+    expect(find.text('Shift ended'), findsOneWidget);
   });
 
   testWidgets('supervisors must clock in to raise a work order', (

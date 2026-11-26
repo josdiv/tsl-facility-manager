@@ -332,6 +332,13 @@ describe('requisitions', () => {
     await assertSucceeds(addDoc(collection(as(env, 'emeka'), 'requisitions'), request('emeka', 'Emeka Okafor')));
   });
 
+  it('lets supervisors request parts at their facility', async () => {
+    await assertSucceeds(addDoc(collection(as(env, 'sarah'), 'requisitions'), request('sarah', 'Sarah James')));
+    // Not for another facility's stock.
+    await assertFails(addDoc(collection(as(env, 'sarah'), 'requisitions'),
+      request('sarah', 'Sarah James', { inventoryId: 'cedar-oil', itemName: 'Generator oil', locationId: 'cedar' })));
+  });
+
   it('refuses pre-approved, foreign, or mismatched requests', async () => {
     const db = as(env, 'emeka');
     const add = (extra) => addDoc(collection(db, 'requisitions'), request('emeka', 'Emeka Okafor', extra));

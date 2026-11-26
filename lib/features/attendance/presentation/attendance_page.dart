@@ -145,7 +145,7 @@ class _LiveAttendanceState extends State<_LiveAttendance> {
         // work waiting for review.
         router.go(afterClockInRoute(widget.role));
       } else {
-        await attendance.clockOut(user, fix: _fix);
+        await attendance.clockOut(user, _fix!);
         messenger
           ..hideCurrentSnackBar()
           ..showSnackBar(const SnackBar(content: Text('Shift ended')));
@@ -246,30 +246,40 @@ class _LiveAttendanceState extends State<_LiveAttendance> {
   }
 
   List<Widget> _actions(bool clockedIn, GpsVerdict? verdict, int? distance) {
-    final location = context.read<LocationService>();
     Widget retry(String label) => OutlinedButton(
       onPressed: _checking ? null : _check,
       child: Text(label),
     );
 
-    if (clockedIn) {
-      return [
-        const InfoBanner(
-          'Your shift is running. Clock out when you leave the facility.',
-          icon: Icons.timer_outlined,
-          tone: BannerTone.success,
-        ),
-        OutlinedButton(
-          onPressed: _busy ? null : () => _clock(clockIn: false),
-          child: const Text('Clock out'),
-        ),
-      ];
-    }
+    // Clocking out is checked like clocking in: at the facility, with a
+    // real, precise enough reading.
+    final verb = clockedIn ? 'clock out' : 'clock in';
+    final running = clockedIn
+        ? const [
+            InfoBanner(
+              'Your shift is running. Clock out at the facility before you '
+              'leave.',
+              icon: Icons.timer_outlined,
+              tone: BannerTone.success,
+            ),
+          ]
+        : const <Widget>[];
+    return [...running, ..._gated(clockedIn, verb, verdict, distance, retry)];
+  }
+
+  List<Widget> _gated(
+    bool clockedIn,
+    String verb,
+    GpsVerdict? verdict,
+    int? distance,
+    Widget Function(String label) retry,
+  ) {
+    final location = context.read<LocationService>();
     if (_site != null && !_site!.hasPosition) {
       return const [
         InfoBanner(
-          'Your facility’s location hasn’t been set up yet, so clock-in isn’t '
-          'available. Ask your administrator to add it.',
+          'Your facility’s location hasn’t been set up yet, so attendance '
+          'isn’t available. Ask your administrator to add it.',
           icon: Icons.edit_location_alt_outlined,
           tone: BannerTone.warning,
         ),
@@ -313,8 +323,8 @@ class _LiveAttendanceState extends State<_LiveAttendance> {
         ];
       case LocationProblem.serviceOff:
         return [
-          const InfoBanner(
-            'Your phone’s location is turned off. Turn it on to clock in.',
+          InfoBanner(
+            'Your phone’s location is turned off. Turn it on to $verb.',
             icon: Icons.location_off_outlined,
             tone: BannerTone.warning,
           ),
@@ -335,14 +345,21 @@ class _LiveAttendanceState extends State<_LiveAttendance> {
           icon: Icons.check_circle_outline,
           tone: BannerTone.success,
         ),
-        FilledButton(
-          onPressed: _busy ? null : () => _clock(clockIn: true),
-          child: const Text('Verify & clock in'),
-        ),
+        if (clockedIn)
+          FilledButton(
+            onPressed: _busy ? null : () => _clock(clockIn: false),
+            child: const Text('Verify & clock out'),
+          )
+        else
+          FilledButton(
+            onPressed: _busy ? null : () => _clock(clockIn: true),
+            child: const Text('Verify & clock in'),
+          ),
       ],
       GpsVerdict.outside => [
         InfoBanner(
-          'Clock-in blocked: you are ${distanceLabel(distance!)} away. Move '
+          '${clockedIn ? 'Clock-out' : 'Clock-in'} blocked: you are '
+          '${distanceLabel(distance!)} away. Move '
           'within the '
           '${_site!.radiusM.round()} metre facility boundary and try again.',
           icon: Icons.location_off_outlined,
@@ -351,9 +368,9 @@ class _LiveAttendanceState extends State<_LiveAttendance> {
         retry('Check again'),
       ],
       GpsVerdict.mocked => [
-        const InfoBanner(
+        InfoBanner(
           'Your location appears to come from a location-faking app. Turn it '
-          'off to clock in.',
+          'off to $verb.',
           icon: Icons.gpp_bad_outlined,
           tone: BannerTone.danger,
         ),

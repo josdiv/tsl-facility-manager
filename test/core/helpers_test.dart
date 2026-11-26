@@ -64,7 +64,7 @@ void main() {
     await cubit.clockIn(sampleProfiles[AppRole.staff]!, fix);
     expect(cubit.state.contains(AppRole.staff), isTrue);
     await cubit.clockIn(sampleProfiles[AppRole.supervisor]!, fix);
-    await cubit.clockOut(sampleProfiles[AppRole.staff]!);
+    await cubit.clockOut(sampleProfiles[AppRole.staff]!, fix);
     expect(cubit.state.shifts.keys, [AppRole.supervisor]);
     await cubit.close();
   });

@@ -31,9 +31,12 @@ BadgeTone _toneFor(RequisitionStatus status) => switch (status) {
   RequisitionStatus.rejected => BadgeTone.danger,
 };
 
-/// The Parts tab: the technician's requests and their approval status.
+/// The Parts tab: the technician's or supervisor's requests and their
+/// approval status.
 class PartsListPage extends StatefulWidget {
-  const PartsListPage({super.key});
+  const PartsListPage({this.role = AppRole.staff, super.key});
+
+  final AppRole role;
 
   @override
   State<PartsListPage> createState() => _PartsListPageState();
@@ -45,7 +48,7 @@ class _PartsListPageState extends State<PartsListPage> {
 
   @override
   Widget build(BuildContext context) {
-    final me = context.profileOf(AppRole.staff);
+    final me = context.profileOf(widget.role);
     if (me.uid != _uid) {
       _uid = me.uid;
       _requests = context.read<PartsRepository>().watchRequests(me);
@@ -61,7 +64,7 @@ class _PartsListPageState extends State<PartsListPage> {
     final now = DateTime.now();
     return TabPage(
       title: 'Parts',
-      role: AppRole.staff,
+      role: widget.role,
       children: [
         Text('Parts requests', style: text.titleLarge),
         const SizedBox(height: 6),
@@ -71,7 +74,7 @@ class _PartsListPageState extends State<PartsListPage> {
         ),
         const SizedBox(height: 16),
         FilledButton.icon(
-          onPressed: () => context.push(AppRoutes.staffPartsNew()),
+          onPressed: () => context.push(AppRoutes.partsNew(widget.role)),
           icon: const Icon(Icons.add),
           label: const Text('Request parts'),
         ),
@@ -130,8 +133,14 @@ class _PartsListPageState extends State<PartsListPage> {
 /// The request form. Opened from the Parts tab, or from a task with that
 /// work order already chosen.
 class PartsRequestPage extends StatefulWidget {
-  const PartsRequestPage({this.workOrderId, super.key});
+  const PartsRequestPage({
+    this.role = AppRole.staff,
+    this.workOrderId,
+    super.key,
+  });
 
+  /// Staff or a supervisor, each for their own facility.
+  final AppRole role;
   final String? workOrderId;
 
   @override
@@ -147,7 +156,7 @@ class _PartsRequestPageState extends State<PartsRequestPage> {
   late final Stream<List<StockItem>> _stock = context
       .read<PartsRepository>()
       .watchStock(
-        context.read<ProfileCubit>().of(AppRole.staff).locationId ?? '',
+        context.read<ProfileCubit>().of(widget.role).locationId ?? '',
       );
   String? _itemId;
   late String? _workOrderId = widget.workOrderId;
@@ -167,7 +176,7 @@ class _PartsRequestPageState extends State<PartsRequestPage> {
     setState(() => _sending = true);
     try {
       await context.read<PartsRepository>().request(
-        context.read<ProfileCubit>().of(AppRole.staff),
+        context.read<ProfileCubit>().of(widget.role),
         item: item,
         quantity: int.parse(_quantity.text.trim()),
         reason: _reason.text.trim(),
@@ -176,7 +185,7 @@ class _PartsRequestPageState extends State<PartsRequestPage> {
       messenger.showSnackBar(
         const SnackBar(content: Text('Request submitted for admin approval')),
       );
-      router.canPop() ? router.pop() : router.go(AppRoutes.staffParts);
+      router.canPop() ? router.pop() : router.go(AppRoutes.parts(widget.role));
     } on PartsFailure catch (failure) {
       messenger.showSnackBar(SnackBar(content: Text(failure.message)));
     } finally {
@@ -187,12 +196,14 @@ class _PartsRequestPageState extends State<PartsRequestPage> {
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
-    final orders = context
-        .watch<WorkOrdersBloc>()
-        .state
-        .assignedTo(context.profileOf(AppRole.staff).uid)
-        .where((order) => order.status.isActive)
-        .toList();
+    // Staff link their own tasks; supervisors any open job at their facility.
+    final state = context.watch<WorkOrdersBloc>().state;
+    final orders =
+        (widget.role == AppRole.staff
+                ? state.assignedTo(context.profileOf(AppRole.staff).uid)
+                : state.orders)
+            .where((order) => order.status.isActive)
+            .toList();
     String labelFor(String id) {
       final order = orders.where((o) => o.id == id).firstOrNull;
       return order == null ? id : '${order.id} · ${order.title}';
@@ -240,7 +251,7 @@ class _PartsRequestPageState extends State<PartsRequestPage> {
               ),
               LabelledDropdown(
                 label: 'Location',
-                options: [context.profileOf(AppRole.staff).facility],
+                options: [context.profileOf(widget.role).facility],
               ),
               if (items.isEmpty)
                 const InfoBanner(

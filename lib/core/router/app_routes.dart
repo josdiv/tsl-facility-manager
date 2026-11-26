@@ -28,11 +28,18 @@ abstract final class AppRoutes {
   /// The review page on one tab: `review` or `team`.
   static String supervisorReviewTab(String tab) => '$supervisorReview?tab=$tab';
   static const supervisorClock = '/supervisor/clock';
+  static const supervisorParts = '/supervisor/parts';
   static const supervisorAlerts = '/supervisor/alerts';
 
   /// The parts request form, optionally with a work order already chosen.
   static String staffPartsNew({String? workOrderId}) =>
-      '/staff/parts/new${workOrderId == null ? '' : '?order=$workOrderId'}';
+      partsNew(AppRole.staff, workOrderId: workOrderId);
+
+  /// The Parts tab and request form, for staff and supervisors.
+  static String parts(AppRole role) => '/${role.path}/parts';
+  static String partsNew(AppRole role, {String? workOrderId}) =>
+      '/${role.path}/parts/new'
+      '${workOrderId == null ? '' : '?order=$workOrderId'}';
 
   static String clientRequest(String id) => '/client/request/$id';
   static String staffTask(String id) => '/staff/task/$id';

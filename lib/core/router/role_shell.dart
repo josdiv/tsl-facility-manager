@@ -61,6 +61,11 @@ class RoleShell extends StatelessWidget {
       ),
       _clock,
       NavigationDestination(
+        icon: Icon(Icons.inventory_2_outlined),
+        selectedIcon: Icon(Icons.inventory_2),
+        label: 'Parts',
+      ),
+      NavigationDestination(
         icon: Icon(Icons.notifications_none),
         selectedIcon: Icon(Icons.notifications),
         label: 'Alerts',

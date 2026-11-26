@@ -53,8 +53,8 @@ class FirebaseAttendanceRepository implements AttendanceRepository {
       _call('clockIn', _position(fix));
 
   @override
-  Future<void> clockOut(UserProfile user, {LocationFix? fix}) =>
-      _call('clockOut', fix == null ? {} : _position(fix));
+  Future<void> clockOut(UserProfile user, LocationFix fix) =>
+      _call('clockOut', _position(fix));
 
   Map<String, Object> _position(LocationFix fix) => {
     'latitude': fix.latitude,
@@ -81,7 +81,7 @@ class FirebaseAttendanceRepository implements AttendanceRepository {
               'administrator to add it.',
         'mock-location' =>
           'Your location appears to come from a location-faking app. Turn it '
-              'off to clock in.',
+              'off to clock in or out.',
         _ when e.code == 'unavailable' || e.code == 'internal' =>
           'We couldn’t reach the server. Check your connection and try again.',
         _ => e.message ?? 'That didn’t work. Please try again.',

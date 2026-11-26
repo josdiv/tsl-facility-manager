@@ -1,6 +1,6 @@
 import { GeoPoint } from 'firebase-admin/firestore';
 import { HttpsError, onCall } from 'firebase-functions/v2/https';
-import { db, distanceMetres, REGION, requireUser, serverTime } from './common';
+import { db, REGION, requireUser, serverTime } from './common';
 import { readPosition, requireOnSite } from './geofence';
 
 async function openShift(uid: string) {
@@ -65,14 +65,14 @@ export const clockOut = onCall({ region: REGION }, async (request) => {
   const shift = await openShift(uid);
   if (!shift) throw new HttpsError('failed-precondition', 'You’re not clocked in.');
 
-  let geo: GeoPoint | null = null;
-  let distanceM: number | null = null;
-  if (request.data?.latitude != null) {
-    const position = readPosition(request.data);
-    geo = new GeoPoint(position.latitude, position.longitude);
-    const location = (await db.doc(`locations/${shift.data().locationId}`).get()).data();
-    if (location) distanceM = Math.round(distanceMetres(location.geo as GeoPoint, position));
-  }
+  // Clocking out, like clocking in, needs the phone at the facility of the
+  // shift being closed (the boss found shifts could end from anywhere).
+  const position = readPosition(request.data);
+  const location = (await db.doc(`locations/${shift.data().locationId}`).get()).data();
+  if (!location) throw new HttpsError('not-found', 'Your facility no longer exists.');
+  if (!location.geo) throw new HttpsError('failed-precondition', 'location-not-set');
+  const distanceM = requireOnSite(location.geo as GeoPoint, location.radiusM, position, request.data?.isMocked);
+  const geo = new GeoPoint(position.latitude, position.longitude);
 
   const now = serverTime();
   const batch = db.batch();

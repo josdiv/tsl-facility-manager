@@ -55,8 +55,8 @@ class AttendanceCubit extends Cubit<AttendanceState> {
       emit(AttendanceState({...state.shifts, user.role: DateTime.now()}));
   }
 
-  Future<void> clockOut(UserProfile user, {LocationFix? fix}) async {
-    await _repository.clockOut(user, fix: fix);
+  Future<void> clockOut(UserProfile user, LocationFix fix) async {
+    await _repository.clockOut(user, fix);
     if (!_live) {
       emit(AttendanceState({...state.shifts}..remove(user.role)));
     }

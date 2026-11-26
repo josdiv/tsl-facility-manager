@@ -49,7 +49,7 @@ class InMemoryAttendanceRepository implements AttendanceRepository {
   }
 
   @override
-  Future<void> clockOut(UserProfile user, {LocationFix? fix}) async {
+  Future<void> clockOut(UserProfile user, LocationFix fix) async {
     _shifts.remove(user.uid);
     _changes.add(null);
   }

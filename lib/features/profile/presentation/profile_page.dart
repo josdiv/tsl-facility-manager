@@ -12,6 +12,7 @@ import '../../../core/widgets/labelled_field.dart';
 import '../../../core/widgets/page_frames.dart';
 import '../../attendance/domain/attendance.dart';
 import '../../attendance/presentation/attendance_cubit.dart';
+import '../../attendance/presentation/shift_actions.dart';
 import '../../auth/domain/auth_repository.dart';
 import '../../auth/presentation/session_cubit.dart';
 import '../domain/user_profile.dart';
@@ -104,10 +105,11 @@ class _ProfilePageState extends State<ProfilePage> {
       );
       if (choice == null || !mounted) return;
       if (choice == _SignOutChoice.clockOut) {
+        final user = context.read<ProfileCubit>().of(widget.role);
+        final location = context.read<LocationService>();
         try {
-          await attendance.clockOut(
-            context.read<ProfileCubit>().of(widget.role),
-          );
+          // Clocking out needs the phone at the facility.
+          await attendance.clockOut(user, await shiftFix(location));
         } on AttendanceFailure catch (failure) {
           if (!mounted) return;
           ScaffoldMessenger.of(context)

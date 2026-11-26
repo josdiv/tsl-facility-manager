@@ -140,6 +140,10 @@ GoRouter createAppRouter({
           () => const AttendancePage(role: AppRole.supervisor),
         ),
         _tab(
+          AppRoutes.supervisorParts,
+          () => const PartsListPage(role: AppRole.supervisor),
+        ),
+        _tab(
           AppRoutes.supervisorAlerts,
           () => const NotificationsPage(role: AppRole.supervisor),
         ),
@@ -153,10 +157,14 @@ GoRouter createAppRouter({
         '/staff/task/:id',
         (s) => TaskEvidencePage(id: s.pathParameters['id']!),
       ),
-      _route(
-        '/staff/parts/new',
-        (s) => PartsRequestPage(workOrderId: s.uri.queryParameters['order']),
-      ),
+      for (final role in [AppRole.staff, AppRole.supervisor])
+        _route(
+          '/${role.path}/parts/new',
+          (s) => PartsRequestPage(
+            role: role,
+            workOrderId: s.uri.queryParameters['order'],
+          ),
+        ),
       _route(
         '/staff/task/:id/submission',
         (s) => SubmissionPage(id: s.pathParameters['id']!),
