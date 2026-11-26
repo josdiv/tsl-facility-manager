@@ -42,6 +42,13 @@ test('an app work order in the dashboard’s format', () => {
   assert.equal(c.onCreate.source, 'app');
 });
 
+test('who raised a client work order, for the dashboard', () => {
+  assert.equal(toAdminWorkOrder({ ...order, clientId: 'client_1' }, []).onCreate.createdBy, 'Client');
+  // A supervisor raising one has no client account.
+  assert.equal(toAdminWorkOrder({ ...order, clientId: null }, []).onCreate.createdBy, 'Supervisor');
+  assert.equal(toAdminWorkOrder({ ...order, type: 'sla' }, []).onCreate.createdBy, 'System');
+});
+
 test('the dashboard’s work order read back for the app', () => {
   const w = fromAdminWorkOrder({ ...toAdminWorkOrder(order, []).fields, status: 'Cancelled', priority: 'High' });
   assert.equal(w.priority, 'high');

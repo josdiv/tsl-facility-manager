@@ -39,6 +39,9 @@ describe('work order photos', () => {
     await assertSucceeds(upload('musa', marina('review', 'return', 'musa.jpg')));
     await assertFails(upload('daniel', marina('review', 'return', 'issue.jpg')));
     await assertFails(upload('sarah', marina('review', 'work', 'closed.jpg')));
+    // Supervisors raising a work order attach report photos; staff don't.
+    await assertSucceeds(upload('sarah', marina('raised-by-sarah', 'report', 'leak.jpg')));
+    await assertFails(upload('emeka', marina('raised-by-sarah', 'report', 'emeka.jpg')));
   });
 
   it('accepts images only, never replaced', async () => {

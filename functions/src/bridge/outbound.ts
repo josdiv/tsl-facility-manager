@@ -73,7 +73,8 @@ export function toAdminWorkOrder(o: AdminDoc, reportPhotoUrls: string[]): Conver
       workOrderId: ref,
       attachments: reportPhotoUrls,
       createdAt: o.createdAt ?? Timestamp.now(),
-      createdBy: o.type === 'sla' ? 'System' : 'Client',
+      // A client work order raised by a supervisor has no client account.
+      createdBy: o.type === 'sla' ? 'System' : o.clientId ? 'Client' : 'Supervisor',
       source: 'app',
     },
   };

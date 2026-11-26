@@ -1,3 +1,4 @@
+import '../../../core/session/app_role.dart';
 import '../../profile/domain/user_profile.dart';
 import '../domain/work_order.dart';
 import '../domain/work_order_repository.dart';
@@ -83,7 +84,8 @@ class InMemoryWorkOrderRepository implements WorkOrderRepository {
   }
 
   @override
-  Future<String> report(IssueDraft draft, UserProfile client) async {
+  Future<String> report(IssueDraft draft, UserProfile reporter) async {
+    final bySupervisor = reporter.role == AppRole.supervisor;
     final now = _now ?? DateTime.now();
     final highest = _orders
         .map((order) => int.parse(order.id.split('-').last))
@@ -103,10 +105,16 @@ class InMemoryWorkOrderRepository implements WorkOrderRepository {
         locationId: draft.location.id,
         zoneId: draft.zone?.id,
         due: now.add(const Duration(hours: 24)),
-        submittedBy: client.name,
-        submittedById: client.uid,
+        submittedBy: reporter.name,
+        submittedById: bySupervisor ? null : reporter.uid,
+        assignee: draft.assignee?.name,
+        assigneeId: draft.assignee?.uid,
         reportMedia: draft.media,
-        history: [WorkOrderEvent('Issue reported', now)],
+        history: [
+          WorkOrderEvent('Issue reported', now),
+          if (draft.assignee case final tech?)
+            WorkOrderEvent('Assigned to ${tech.name}', now),
+        ],
       ),
     );
     _changes.add(_snapshot);

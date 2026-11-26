@@ -193,7 +193,7 @@ class FirestoreWorkOrderRepository implements WorkOrderRepository {
   }
 
   @override
-  Future<String> report(IssueDraft draft, UserProfile client) async {
+  Future<String> report(IssueDraft draft, UserProfile reporter) async {
     // Reports are only accepted from the facility itself, so read the
     // location first, before any photo is uploaded.
     final fix = await _reportLocation();
@@ -211,6 +211,7 @@ class FirestoreWorkOrderRepository implements WorkOrderRepository {
             'locationId': draft.location.id,
             'zoneId': draft.zone?.id,
             'assetId': draft.asset?.id,
+            'assignedToId': draft.assignee?.uid,
             'photos': [
               for (final photo in photos)
                 photoPath(locationId, docId, 'report', photo),

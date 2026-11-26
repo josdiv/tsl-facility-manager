@@ -18,6 +18,7 @@ import '../../../../core/widgets/progress_timeline.dart';
 import '../../../../core/widgets/section_header.dart';
 import '../../../../core/widgets/stat_tile.dart';
 import '../../../attendance/domain/attendance.dart';
+import '../../../attendance/presentation/shift_actions.dart';
 import '../../../profile/domain/user_profile.dart';
 import '../../../profile/presentation/profile_cubit.dart';
 import '../../data/sample_work_orders.dart';
@@ -174,8 +175,13 @@ class MyRequestsPage extends StatelessWidget {
   }
 }
 
+/// "Report an issue" for clients, and "New work order" for supervisors: the
+/// same form, where a supervisor works at their own facility and can assign
+/// one of its technicians straight away.
 class ReportIssuePage extends StatefulWidget {
-  const ReportIssuePage({super.key});
+  const ReportIssuePage({this.role = AppRole.client, super.key});
+
+  final AppRole role;
 
   @override
   State<ReportIssuePage> createState() => _ReportIssuePageState();
@@ -201,6 +207,12 @@ class _ReportIssuePageState extends State<ReportIssuePage> {
   var _formVersion = 0;
   var _sending = false;
 
+  /// A supervisor's technicians, and who they assign the work to.
+  var _team = const <TeamMember>[];
+  TeamMember? _assignee;
+
+  bool get _bySupervisor => widget.role == AppRole.supervisor;
+
   @override
   void initState() {
     super.initState();
@@ -220,9 +232,23 @@ class _ReportIssuePageState extends State<ReportIssuePage> {
   Future<void> _loadFacilities() async {
     final profiles = context.read<ProfileCubit>();
     final location = context.read<LocationService>();
-    final facilities = await profiles.facilityOptions();
+    final me = profiles.of(widget.role);
+    var facilities = await profiles.facilityOptions();
     if (!mounted) return;
-    final chosen = profiles.of(AppRole.client).locationId;
+    if (_bySupervisor) {
+      // Supervisors raise work orders at their own facility, for their team.
+      facilities = [...facilities.where((f) => f.id == me.locationId)];
+      final locationId = me.locationId;
+      if (locationId != null) {
+        final team = await context
+            .read<WorkOrderRepository>()
+            .watchTeam(locationId)
+            .first;
+        if (!mounted) return;
+        setState(() => _team = team);
+      }
+    }
+    final chosen = me.locationId;
     setState(() => _facilities = facilities);
     await _pickLocation(
       facilities.where((f) => f.id == chosen).firstOrNull ??
@@ -322,9 +348,10 @@ class _ReportIssuePageState extends State<ReportIssuePage> {
           location: location,
           zone: target?.zone,
           asset: target?.asset,
+          assignee: _bySupervisor ? _assignee : null,
           media: _media,
         ),
-        context.read<ProfileCubit>().of(AppRole.client),
+        context.read<ProfileCubit>().of(widget.role),
       ),
     );
   }
@@ -332,8 +359,13 @@ class _ReportIssuePageState extends State<ReportIssuePage> {
   void _onReported(BuildContext context, WorkOrdersState state) {
     final id = state.lastReportedId;
     if (id == null) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text('Issue submitted · $id')));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          _bySupervisor ? 'Work order created · $id' : 'Issue submitted · $id',
+        ),
+      ),
+    );
     _title.clear();
     _description.clear();
     setState(() {
@@ -344,6 +376,11 @@ class _ReportIssuePageState extends State<ReportIssuePage> {
     // Open it from the requests tab, so back goes to the list rather than
     // to a fresh form.
     final router = GoRouter.of(context);
+    if (_bySupervisor) {
+      router.go(AppRoutes.supervisorReviewTab('team'));
+      router.push(AppRoutes.supervisorOrder(id));
+      return;
+    }
     router.go(AppRoutes.clientRequests);
     router.push(AppRoutes.clientRequest(id));
   }
@@ -363,6 +400,8 @@ class _ReportIssuePageState extends State<ReportIssuePage> {
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
+    // Supervisors act on work only while clocked in.
+    final onShift = !_bySupervisor || isOnShift(context, AppRole.supervisor);
     return MultiBlocListener(
       listeners: [
         BlocListener<WorkOrdersBloc, WorkOrdersState>(
@@ -376,86 +415,122 @@ class _ReportIssuePageState extends State<ReportIssuePage> {
           listener: _onFailed,
         ),
       ],
-      child: TabPage(
-        title: 'Report an issue',
-        role: AppRole.client,
-        children: [
-          Form(
-            key: _form,
-            child: Column(
-              key: ValueKey(_formVersion),
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text('Tell us what’s wrong', style: text.titleLarge),
-                const SizedBox(height: 6),
-                Text(
-                  'Share the details so the right team can help.',
-                  style: text.bodyMedium,
+      child: _frame([
+        Form(
+          key: _form,
+          child: Column(
+            key: ValueKey(_formVersion),
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                _bySupervisor ? 'Raise a work order' : 'Tell us what’s wrong',
+                style: text.titleLarge,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                _bySupervisor
+                    ? 'It’s logged as a client work order, with you as '
+                          'its supervisor.'
+                    : 'Share the details so the right team can help.',
+                style: text.bodyMedium,
+              ),
+              const SizedBox(height: 16),
+              if (_bySupervisor && !onShift)
+                const ClockInFirst(role: AppRole.supervisor),
+              if (_facilities.isNotEmpty)
+                LabelledDropdown(
+                  // Starts again on the nearest once the phone's position
+                  // reorders the list.
+                  key: ValueKey(_here),
+                  label: 'Location',
+                  options: [for (final f in _facilities) f.name],
+                  initialValue: _location?.name,
+                  onChanged: (value) {
+                    _pickedByHand = true;
+                    _pickLocation(
+                      _facilities.firstWhere((f) => f.name == value),
+                    );
+                  },
                 ),
-                const SizedBox(height: 16),
-                if (_facilities.isNotEmpty)
-                  LabelledDropdown(
-                    // Starts again on the nearest once the phone's position
-                    // reorders the list.
-                    key: ValueKey(_here),
-                    label: 'Location',
-                    options: [for (final f in _facilities) f.name],
-                    initialValue: _location?.name,
-                    onChanged: (value) {
-                      _pickedByHand = true;
-                      _pickLocation(
-                        _facilities.firstWhere((f) => f.name == value),
-                      );
-                    },
+              if (_location case final location?)
+                if (_distanceNote(location, text) case final note?)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: note,
                   ),
-                if (_location case final location?)
-                  if (_distanceNote(location, text) case final note?)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 16),
-                      child: note,
-                    ),
-                if (_targets.isNotEmpty)
-                  LabelledDropdown(
-                    // A new location brings its own list, so start afresh.
-                    key: ValueKey(_location),
-                    label: _targets.any((t) => t.asset != null)
-                        ? 'Asset / zone'
-                        : 'Building / zone',
-                    options: [for (final t in _targets) t.label],
-                    onChanged: (value) =>
-                        _target = _targets.firstWhere((t) => t.label == value),
-                  ),
-                LabelledTextField(
-                  label: 'Issue title',
-                  hint: 'Air conditioning not cooling',
-                  controller: _title,
-                  validator: (value) =>
-                      requiredText(value, 'Give the issue a short title'),
+              if (_targets.isNotEmpty)
+                LabelledDropdown(
+                  // A new location brings its own list, so start afresh.
+                  key: ValueKey(_location),
+                  label: _targets.any((t) => t.asset != null)
+                      ? 'Asset / zone'
+                      : 'Building / zone',
+                  options: [for (final t in _targets) t.label],
+                  onChanged: (value) =>
+                      _target = _targets.firstWhere((t) => t.label == value),
                 ),
-                LabelledTextField(
-                  label: 'Description',
-                  hint: 'What is happening, and where?',
-                  controller: _description,
-                  maxLines: 4,
-                  validator: (value) =>
-                      requiredText(value, 'Describe what is wrong'),
+              LabelledTextField(
+                label: 'Issue title',
+                hint: 'Air conditioning not cooling',
+                controller: _title,
+                validator: (value) =>
+                    requiredText(value, 'Give the issue a short title'),
+              ),
+              LabelledTextField(
+                label: 'Description',
+                hint: 'What is happening, and where?',
+                controller: _description,
+                maxLines: 4,
+                validator: (value) =>
+                    requiredText(value, 'Describe what is wrong'),
+              ),
+              MediaPickerField(
+                label: 'Photos',
+                max: 4,
+                onChanged: (media) => _media = media,
+              ),
+              if (_bySupervisor)
+                LabelledDropdown(
+                  label: 'Assign to',
+                  options: [
+                    _assignLater,
+                    for (final member in _team) member.name,
+                  ],
+                  initialValue: _assignee?.name ?? _assignLater,
+                  onChanged: (value) => _assignee = _team
+                      .where((m) => m.name == value)
+                      .firstOrNull,
                 ),
-                MediaPickerField(
-                  label: 'Photos',
-                  max: 4,
-                  onChanged: (media) => _media = media,
+              FilledButton(
+                onPressed: _sending || (_bySupervisor && !onShift)
+                    ? null
+                    : _submit,
+                child: Text(
+                  _sending
+                      ? 'Sending…'
+                      : _bySupervisor
+                      ? 'Create work order'
+                      : 'Submit issue',
                 ),
-                FilledButton(
-                  onPressed: _sending ? null : _submit,
-                  child: Text(_sending ? 'Sending…' : 'Submit issue'),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
-      ),
+        ),
+      ]),
     );
   }
+
+  static const _assignLater = 'Assign later';
+
+  /// Clients report from their Report tab; supervisors open the form from
+  /// their home screen.
+  Widget _frame(List<Widget> children) => _bySupervisor
+      ? DetailPage(title: 'New work order', children: children)
+      : TabPage(
+          title: 'Report an issue',
+          role: AppRole.client,
+          children: children,
+        );
 }
 
 class RequestTrackingPage extends StatelessWidget {

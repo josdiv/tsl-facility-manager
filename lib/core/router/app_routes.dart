@@ -22,6 +22,9 @@ abstract final class AppRoutes {
   static const supervisorHome = '/supervisor/home';
   static const supervisorReview = '/supervisor/review';
 
+  /// A supervisor raises a client work order.
+  static const supervisorReport = '/supervisor/report';
+
   /// The review page on one tab: `review` or `team`.
   static String supervisorReviewTab(String tab) => '$supervisorReview?tab=$tab';
   static const supervisorClock = '/supervisor/clock';
@@ -48,6 +51,9 @@ abstract final class AppRoutes {
       : '/${role.path}/notifications';
   static String profile(AppRole role) => '/${role.path}/profile';
   static String support(AppRole role) => '/${role.path}/support';
+
+  /// The company's More menu (staff and supervisors).
+  static String more(AppRole role) => '/${role.path}/more';
 
   static String previewGps(String state) => '/preview/gps/$state';
   static String previewAccount(String state) => '/preview/account/$state';

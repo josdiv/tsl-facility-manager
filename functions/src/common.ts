@@ -22,6 +22,8 @@ export type Role = 'admin' | 'supervisor' | 'staff' | 'client';
 export interface UserDoc {
   role: Role;
   status: 'active' | 'inactive' | 'exited' | 'deleted';
+  /** Set by clockIn / clockOut. */
+  onShift?: boolean;
   name: string;
   email: string;
   phone?: string | null;

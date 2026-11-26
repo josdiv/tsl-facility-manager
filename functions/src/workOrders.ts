@@ -41,7 +41,14 @@ function photoPaths(value: unknown, locationId: string, workOrderId: string, kin
  * workOrders/{id}/report/ before calling this.
  */
 export const reportIssue = onCall({ region: REGION }, async (request) => {
-  const { uid, user } = await requireUser(request, ['client']);
+  const { uid, user } = await requireUser(request, ['client', 'supervisor']);
+  // Supervisors raise client work orders too: at their own facility, while
+  // on shift, as its supervisor, optionally assigning a technician straight
+  // away. There's no client company or monthly limit then.
+  const bySupervisor = user.role === 'supervisor';
+  if (bySupervisor && user.onShift !== true) {
+    throw new HttpsError('failed-precondition', 'not-on-shift');
+  }
   const data = request.data ?? {};
   const workOrderId = text(data.workOrderId, 'Work order ID', 10, 40);
   if (!/^[A-Za-z0-9]+$/.test(workOrderId)) throw new HttpsError('invalid-argument', 'Bad work order ID.');
@@ -56,8 +63,15 @@ export const reportIssue = onCall({ region: REGION }, async (request) => {
   // Clients report from the facility itself, which keeps out spam reports.
   const position = readPosition(data.position);
 
-  const companyRef = db.doc(`companies/${user.companyId}`);
-  const usageRef = companyRef.collection('usage').doc(lagosMonth());
+  if (bySupervisor && locationId !== user.locationId) {
+    throw new HttpsError('permission-denied', 'You can only raise work orders at your own facility.');
+  }
+  const assignedToId = !bySupervisor || data.assignedToId == null || data.assignedToId === ''
+    ? null
+    : text(data.assignedToId, 'Technician', 1, 128);
+
+  const companyRef = bySupervisor ? null : db.doc(`companies/${user.companyId}`);
+  const usageRef = companyRef ? companyRef.collection('usage').doc(lagosMonth()) : null;
 
   return db.runTransaction(async (tx) => {
     const asset = assetId ? await tx.get(db.doc(`assets/${assetId}`)) : null;
@@ -68,15 +82,20 @@ export const reportIssue = onCall({ region: REGION }, async (request) => {
       }
       zoneId = typeof a.zoneId === 'string' && a.zoneId ? a.zoneId : zoneId;
     }
-    const [company, location, zone, usage, existing] = await Promise.all([
-      tx.get(companyRef),
+    const [company, location, zone, usage, existing, assignee] = await Promise.all([
+      companyRef ? tx.get(companyRef) : Promise.resolve(null),
       tx.get(db.doc(`locations/${locationId}`)),
       zoneId ? tx.get(db.doc(`zones/${zoneId}`)) : Promise.resolve(null),
-      tx.get(usageRef),
+      usageRef ? tx.get(usageRef) : Promise.resolve(null),
       tx.get(db.doc(`workOrders/${workOrderId}`)),
+      assignedToId ? tx.get(db.doc(`users/${assignedToId}`)) : Promise.resolve(null),
     ]);
     if (existing.exists) throw new HttpsError('already-exists', 'That request was already sent.');
-    const companyData = company.data()!;
+    const companyData = company?.data() ?? {};
+    const tech = assignee?.data();
+    if (assignee && (!tech || tech.role !== 'staff' || tech.status !== 'active' || tech.locationId !== locationId)) {
+      throw new HttpsError('invalid-argument', 'That technician isn’t on your team at this facility.');
+    }
     // Clients see every facility but can only report from the one they're at.
     if (!location.exists || location.data()!.status !== 'active') {
       throw new HttpsError('permission-denied', 'You can’t report issues for that facility.');
@@ -91,9 +110,9 @@ export const reportIssue = onCall({ region: REGION }, async (request) => {
     if (zone && zone.data()?.locationId !== locationId) {
       throw new HttpsError('invalid-argument', 'That zone isn’t at this facility.');
     }
-    const used = (usage.data()?.workOrderCount as number | undefined) ?? 0;
-    const limit = companyData.monthlyWorkOrderLimit as number | null;
-    if (limit != null && used >= limit) {
+    const used = (usage?.data()?.workOrderCount as number | undefined) ?? 0;
+    const limit = (companyData.monthlyWorkOrderLimit as number | null | undefined) ?? null;
+    if (!bySupervisor && limit != null && used >= limit) {
       throw new HttpsError('resource-exhausted', 'monthly-limit');
     }
 
@@ -103,14 +122,20 @@ export const reportIssue = onCall({ region: REGION }, async (request) => {
     const geo = locationData.geo as GeoPoint | null;
     if (!geo) throw new HttpsError('failed-precondition', 'no-site-position');
     const distanceM = requireOnSite(geo, locationData.radiusM, position, data.position?.isMocked);
-    const supervisor = locationData.siteManagerId
+    const siteManager = !bySupervisor && locationData.siteManagerId
       ? (await tx.get(db.doc(`users/${locationData.siteManagerId}`))).data()
       : undefined;
+    const supervisorId = bySupervisor
+      ? uid
+      : siteManager?.role === 'supervisor' ? locationData.siteManagerId : null;
+    const supervisorName = bySupervisor
+      ? user.name
+      : siteManager?.role === 'supervisor' ? siteManager.name : null;
     const number = await nextNumber(tx, 'workOrders', 1001);
     const ref = `WO-${number}`;
     const now = Timestamp.now();
 
-    tx.set(usageRef, { workOrderCount: used + 1 }, { merge: true });
+    if (usageRef) tx.set(usageRef, { workOrderCount: used + 1 }, { merge: true });
     tx.set(db.doc(`workOrders/${workOrderId}`), {
       ref,
       type: 'client',
@@ -124,15 +149,17 @@ export const reportIssue = onCall({ region: REGION }, async (request) => {
       zoneName: zone ? zone.data()!.name : null,
       assetId: asset ? asset.id : null,
       assetName: asset ? (asset.data()!.equipmentName ?? asset.id) : null,
-      companyId: user.companyId,
-      companyName: companyData.name,
-      clientId: uid,
+      companyId: bySupervisor ? null : user.companyId,
+      companyName: bySupervisor ? null : companyData.name,
+      // Who reported it. A supervisor raising one isn't the client, so no
+      // client notifications go back to them; their name shows as reporter.
+      clientId: bySupervisor ? null : uid,
       clientName: user.name,
       slaId: null,
-      assignedToId: null,
-      assignedToName: null,
-      supervisorId: supervisor?.role === 'supervisor' ? locationData.siteManagerId : null,
-      supervisorName: supervisor?.role === 'supervisor' ? supervisor.name : null,
+      assignedToId: tech ? assignedToId : null,
+      assignedToName: tech ? tech.name : null,
+      supervisorId,
+      supervisorName,
       assignmentNote: null,
       dueAt: Timestamp.fromMillis(now.toMillis() + DAY_MS),
       reportPhotos,
@@ -203,12 +230,28 @@ export const onWorkOrderWrite = onDocumentWritten(
           ...about,
         });
       } else {
+        // Not to the supervisor who raised it themselves.
         await notify(await supervisorsOf(after), {
           kind: 'system',
           title: 'New request',
           body: `${after.ref} ${after.title} · ${after.zoneName ?? after.locationName}`,
           ...about,
-        });
+        }, actorId);
+        // A supervisor can raise a work order already assigned.
+        if (after.assignedToId) {
+          await events.add({
+            ...base,
+            kind: 'assigned',
+            note: `Assigned to ${after.assignedToName}`,
+            photos: [],
+          });
+          await notify([after.assignedToId], {
+            kind: 'assigned',
+            title: 'New assignment',
+            body: `${after.ref} ${after.title} was assigned to you`,
+            ...about,
+          }, actorId);
+        }
       }
       return;
     }

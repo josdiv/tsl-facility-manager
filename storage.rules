@@ -57,8 +57,9 @@ service firebase.storage {
       allow update, delete: if false;
 
       allow create: if resource == null && workOrderAt(locationId) && image(10) && (
-        // A client, just before calling reportIssue.
-        (kind == 'report' && role() == 'client')
+        // A client, or a supervisor raising a work order, just before
+        // calling reportIssue.
+        (kind == 'report' && role() in ['client', 'supervisor'])
         // Staff, for proof of work.
         || (kind == 'work' && role() == 'staff')
         // Supervisors, when returning or confirming work.

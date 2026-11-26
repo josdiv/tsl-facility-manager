@@ -9,6 +9,7 @@ import 'package:tsl_facility_manager/core/router/app_routes.dart';
 import 'package:tsl_facility_manager/core/session/app_role.dart';
 import 'package:tsl_facility_manager/features/attendance/domain/attendance.dart';
 import 'package:tsl_facility_manager/features/attendance/presentation/attendance_cubit.dart';
+import 'package:tsl_facility_manager/features/profile/presentation/more_page.dart';
 import 'package:tsl_facility_manager/features/profile/presentation/profile_cubit.dart';
 
 Future<void> pumpApp(
@@ -690,6 +691,86 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Your facility, connected.'), findsOneWidget);
     expect(find.text('Your account has been deleted.'), findsOneWidget);
+  });
+
+  for (final role in [AppRole.staff, AppRole.supervisor]) {
+    testWidgets('${role.name} profile has a More menu', (tester) async {
+      await pumpApp(
+        tester,
+        AppRoutes.profile(role),
+        size: const Size(360, 2400),
+      );
+      expect(find.text('More'), findsOneWidget);
+    });
+  }
+
+  testWidgets('client profile has no More menu', (tester) async {
+    await pumpApp(
+      tester,
+      AppRoutes.profile(AppRole.client),
+      size: const Size(360, 2400),
+    );
+    expect(find.text('More'), findsNothing);
+  });
+
+  test('the More link carries the fixed sid and the staff email', () {
+    final link = MoreMenu.linkFor('bola@thickservices.com');
+    expect(
+      link.toString(),
+      'https://thickservices.com/TSLfacilitymanager/mwrap/index'
+      '?sid=f470ea1807a7c7e8e82b7e289fdc0d5383d68e74'
+      '&staffEmail=bola%40thickservices.com',
+    );
+    expect(link.queryParameters['staffEmail'], 'bola@thickservices.com');
+  });
+
+  testWidgets('a supervisor raises a work order and assigns a technician', (
+    tester,
+  ) async {
+    await pumpApp(
+      tester,
+      AppRoutes.supervisorHome,
+      size: const Size(360, 2400),
+      onShift: AppRole.supervisor,
+    );
+    await tapText(tester, 'New work order');
+    expect(find.text('Raise a work order'), findsOneWidget);
+    // Their own facility only.
+    expect(find.text('Marina Towers, Lagos'), findsOneWidget);
+    expect(find.text('Cedar Court, Abuja'), findsNothing);
+
+    await enterField(tester, 'Issue title', 'Corridor light out');
+    await enterField(tester, 'Description', 'Third floor, by the lifts');
+    await tester.tap(find.text('Assign later'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Emeka Okafor').last);
+    await tester.pumpAndSettle();
+    await tapText(tester, 'Create work order');
+
+    expect(find.textContaining('Work order created'), findsOneWidget);
+    expect(find.text('Corridor light out'), findsWidgets);
+    expect(find.textContaining('Emeka Okafor'), findsWidgets);
+  });
+
+  testWidgets('supervisors must clock in to raise a work order', (
+    tester,
+  ) async {
+    await pumpApp(
+      tester,
+      AppRoutes.supervisorReport,
+      size: const Size(360, 2400),
+    );
+    expect(
+      find.text('Clock in with GPS before you work on this task.'),
+      findsOneWidget,
+    );
+    final button = tester.widget<ButtonStyleButton>(
+      find.ancestor(
+        of: find.text('Create work order'),
+        matching: find.bySubtype<ButtonStyleButton>(),
+      ),
+    );
+    expect(button.onPressed, isNull);
   });
 
   testWidgets('staff accounts can\'t be deleted from the app', (tester) async {

@@ -1,5 +1,6 @@
 import '../../features/attendance/presentation/attendance_page.dart';
 import '../../features/auth/presentation/login_pages.dart';
+import '../../features/profile/presentation/more_page.dart';
 import '../../features/auth/presentation/session_cubit.dart';
 import '../../features/messaging/presentation/messaging_pages.dart';
 import '../../features/notifications/presentation/notifications_page.dart';
@@ -186,6 +187,12 @@ GoRouter createAppRouter({
         _route('/${role.path}/profile', (_) => ProfilePage(role: role)),
         _route('/${role.path}/support', (_) => SupportChatPage(role: role)),
       ],
+      for (final role in [AppRole.staff, AppRole.supervisor])
+        _route('/${role.path}/more', (_) => MorePage(role: role)),
+      _route(
+        AppRoutes.supervisorReport,
+        (_) => const ReportIssuePage(role: AppRole.supervisor),
+      ),
       for (final role in [AppRole.client, AppRole.staff])
         _route(
           '/${role.path}/notifications',

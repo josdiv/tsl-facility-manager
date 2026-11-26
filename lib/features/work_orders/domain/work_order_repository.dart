@@ -61,6 +61,7 @@ class IssueDraft extends Equatable {
     required this.location,
     this.zone,
     this.asset,
+    this.assignee,
     this.media = const [],
   });
 
@@ -73,10 +74,21 @@ class IssueDraft extends Equatable {
 
   /// The equipment at fault, if the client picked one.
   final Asset? asset;
+
+  /// The technician a supervisor assigns while raising the work order.
+  final TeamMember? assignee;
   final List<String> media;
 
   @override
-  List<Object?> get props => [title, description, location, zone, asset, media];
+  List<Object?> get props => [
+    title,
+    description,
+    location,
+    zone,
+    asset,
+    assignee,
+    media,
+  ];
 }
 
 /// Why a work order action failed, in words the app can show.
@@ -106,7 +118,9 @@ abstract interface class WorkOrderRepository {
   Future<void> update(WorkOrder before, WorkOrder after);
 
   /// Creates a client request and returns its reference, such as `WO-1049`.
-  Future<String> report(IssueDraft draft, UserProfile client);
+  /// A client reports an issue, or a supervisor raises a client work order
+  /// at their facility ([reporter] is either).
+  Future<String> report(IssueDraft draft, UserProfile reporter);
 
   /// The zones at a facility, by name.
   Future<List<Zone>> zones(String locationId);

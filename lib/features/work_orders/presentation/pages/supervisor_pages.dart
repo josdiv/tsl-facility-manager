@@ -84,6 +84,12 @@ class SupervisorHomePage extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         const ShiftCard(role: AppRole.supervisor),
+        OutlinedButton.icon(
+          onPressed: () => context.push(AppRoutes.supervisorReport),
+          icon: const Icon(Icons.add),
+          label: const Text('New work order'),
+        ),
+        const SizedBox(height: 12),
         TeamBuilder(
           builder: (context, team) => StatRow(
             first: StatTile(

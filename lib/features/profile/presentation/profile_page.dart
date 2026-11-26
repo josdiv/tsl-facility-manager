@@ -258,6 +258,21 @@ class _ProfilePageState extends State<ProfilePage> {
             ],
           ),
         ),
+        // The company's own menu, for staff and supervisors.
+        if (widget.role != AppRole.client) ...[
+          const SizedBox(height: 12),
+          AppCard(
+            onTap: () => context.push(AppRoutes.more(widget.role)),
+            child: Row(
+              children: [
+                const Icon(Icons.grid_view_rounded, color: AppColors.primary),
+                const SizedBox(width: 12),
+                Expanded(child: Text('More', style: text.titleSmall)),
+                const Icon(Icons.chevron_right, color: AppColors.muted),
+              ],
+            ),
+          ),
+        ],
         const SizedBox(height: 4),
         OutlinedButton.icon(
           style: OutlinedButton.styleFrom(foregroundColor: AppColors.danger),
