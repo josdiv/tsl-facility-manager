@@ -1,0 +1,1 @@
+Staff and supervisors now have a More menu with company resources. Supervisors can raise work orders and assign a technician straight away, and request parts from their own Parts tab. Clocking out now confirms you're at the facility, just like clocking in.
