@@ -31,6 +31,11 @@ abstract interface class AuthRepository {
   /// [createClientAccount].
   Future<String?> verifyEmailCode(String email, String code);
 
+  /// Whether new clients may sign up in this app. On iOS it follows a switch
+  /// (settings/public.clientSignupOnIos, on unless set false), so sign-up can
+  /// be hidden for App Review without a new build.
+  Future<bool> clientSignupAllowed();
+
   /// Creates a new client's account and signs them in.
   Future<void> createClientAccount({
     required String email,

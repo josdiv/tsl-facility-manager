@@ -17,6 +17,9 @@ class SampleAuthRepository implements AuthRepository {
   Future<String?> verifyEmailCode(String email, String code) async => null;
 
   @override
+  Future<bool> clientSignupAllowed() async => true;
+
+  @override
   Future<void> createClientAccount({
     required String email,
     required String ticket,

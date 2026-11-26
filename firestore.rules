@@ -548,6 +548,13 @@ service cloud.firestore {
       }
     }
 
+    // App switches anyone may read, e.g. whether clients can sign up on
+    // iOS (clientSignupOnIos). Changed from the console, not the app.
+    match /settings/public {
+      allow read: if true;
+      allow write: if false;
+    }
+
     // counters, emailCodes and anything not listed above: server only.
     match /{document=**} {
       allow read, write: if false;

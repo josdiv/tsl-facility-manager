@@ -1,0 +1,11 @@
+# App Identifier (Bundle ID)
+app_identifier("com.dawnglobalict.tslfacilitymanager")
+
+# Apple Developer account email (same company account as SpotLat and Blocfarm)
+apple_id("tedxgbagada.app@gmail.com")
+
+# Developer Portal Team ID (same team as SpotLat)
+team_id("932B2QQQ55")
+
+# App Store Connect Team ID
+itc_team_id("118531340")

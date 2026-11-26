@@ -9,7 +9,13 @@ import 'package:tsl_facility_manager/features/auth/presentation/session_cubit.da
 
 /// A new email: the code is accepted with a sign-up ticket.
 class _NewClientAuth implements AuthRepository {
+  _NewClientAuth({this.signupAllowed = true});
+
+  final bool signupAllowed;
   final created = <Map<String, String>>[];
+
+  @override
+  Future<bool> clientSignupAllowed() async => signupAllowed;
 
   @override
   Future<String?> verifyEmailCode(String email, String code) async =>
@@ -36,7 +42,61 @@ class _NewClientAuth implements AuthRepository {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+Future<_NewClientAuth> _pumpVerify(
+  WidgetTester tester, {
+  bool signupAllowed = true,
+}) async {
+  final auth = _NewClientAuth(signupAllowed: signupAllowed);
+  final router = GoRouter(
+    initialLocation: '/start',
+    routes: [
+      GoRoute(
+        path: '/start',
+        builder: (context, _) => Scaffold(
+          body: TextButton(
+            onPressed: () => context.push(AppRoutes.emailVerification),
+            child: const Text('start'),
+          ),
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.emailVerification,
+        builder: (_, _) => const EmailVerificationPage(email: 'new@x.ng'),
+      ),
+      GoRoute(
+        path: AppRoutes.clientSignup,
+        builder: (_, state) =>
+            ClientSignupPage(signup: state.extra! as ClientSignup),
+      ),
+    ],
+  );
+  await tester.pumpWidget(
+    RepositoryProvider<AuthRepository>.value(
+      value: auth,
+      child: BlocProvider(
+        create: (_) => SessionCubit(auth, enforced: false),
+        child: MaterialApp.router(routerConfig: router),
+      ),
+    ),
+  );
+  await tester.tap(find.text('start'));
+  await tester.pumpAndSettle();
+  await tester.enterText(find.byType(EditableText).first, '123456');
+  await tester.pumpAndSettle();
+  return auth;
+}
+
 void main() {
+  testWidgets('with sign-up switched off, a new email is turned away', (
+    tester,
+  ) async {
+    final auth = await _pumpVerify(tester, signupAllowed: false);
+    expect(find.text('Tell us about you'), findsNothing);
+    expect(find.textContaining('Ask your facility team'), findsOneWidget);
+    expect(find.text('start'), findsOneWidget);
+    expect(auth.created, isEmpty);
+  });
+
   testWidgets('a new email verifies, then signs up with its details', (
     tester,
   ) async {

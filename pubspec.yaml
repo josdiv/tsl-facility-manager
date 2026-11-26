@@ -77,6 +77,10 @@ flutter_launcher_icons:
 
 # The following section is specific to Flutter packages.
 flutter:
+  config:
+    # iOS uses CocoaPods, as SpotLat does: Swift Package Manager couldn't
+    # fetch firebase-ios-sdk here, and Fastlane's lanes expect pods.
+    enable-swift-package-manager: false
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in

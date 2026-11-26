@@ -1,0 +1,203 @@
+# Fastfile for TSL Facility Manager iOS
+# Builds the Flutter release, signs the IPA, and ships it to TestFlight /
+# the App Store. Same approach as SpotLat (same Apple team); see
+# fastlane/DEPLOYMENT.md.
+
+default_platform(:ios)
+
+require "fileutils"
+require "shellwords"
+
+# Absolute anchors that don't depend on fastlane's working directory: walk up
+# from the CWD to the folder with pubspec.yaml.
+def self.find_repo_root
+  dir = File.expand_path(Dir.pwd)
+  loop do
+    return dir if File.exist?(File.join(dir, "pubspec.yaml"))
+    parent = File.dirname(dir)
+    raise "pubspec.yaml not found above #{Dir.pwd}" if parent == dir
+    dir = parent
+  end
+end
+
+REPO_ROOT = find_repo_root
+IOS_DIR = File.join(REPO_ROOT, "ios")
+FASTLANE_DIR = File.join(IOS_DIR, "fastlane")
+
+# ── App Store Connect API key (team-level) ──────────────────────────────────
+# The .p8 lives beside this file and is git-ignored. Its Key ID is taken from
+# the file name (AuthKey_<KEY_ID>.p8); the Issuer ID is shown on App Store
+# Connect → Users and Access → Integrations → App Store Connect API.
+ASC_ISSUER_ID = ENV.fetch("ASC_ISSUER_ID", "")
+ASC_KEY_PATH = Dir[File.join(FASTLANE_DIR, "AuthKey_*.p8")].first
+ASC_KEY_ID = ASC_KEY_PATH && File.basename(ASC_KEY_PATH)[/AuthKey_(\w+)\.p8/, 1]
+
+# Developer Portal team the app ships under. The Xcode project was
+# scaffolded with a personal team, so every build overrides DEVELOPMENT_TEAM.
+TEAM_ID = "932B2QQQ55"
+APP_IDENTIFIER = "com.dawnglobalict.tslfacilitymanager"
+IPA_NAME = "TSL-Facility-Manager.ipa"
+
+def api_key
+  UI.user_error!("No AuthKey_*.p8 in #{FASTLANE_DIR}") unless ASC_KEY_PATH
+  UI.user_error!("Set ASC_ISSUER_ID (App Store Connect API issuer)") if ASC_ISSUER_ID.empty?
+  @api_key ||= app_store_connect_api_key(
+    key_id: ASC_KEY_ID,
+    issuer_id: ASC_ISSUER_ID,
+    key_filepath: ASC_KEY_PATH,
+  )
+end
+
+# Automatic signing + -allowProvisioningUpdates: Xcode creates/refreshes the
+# distribution certificate and App Store profile through the API key.
+def gym_options
+  api_key # Xcode needs the key loaded to provision.
+  {
+    workspace: File.join(IOS_DIR, "Runner.xcworkspace"),
+    scheme: "Runner",
+    export_method: "app-store",
+    output_directory: File.join(IOS_DIR, "build"),
+    output_name: IPA_NAME,
+    xcargs: "-allowProvisioningUpdates " \
+            "-authenticationKeyPath #{ASC_KEY_PATH.shellescape} " \
+            "-authenticationKeyID #{ASC_KEY_ID} " \
+            "-authenticationKeyIssuerID #{ASC_ISSUER_ID} " \
+            "DEVELOPMENT_TEAM=#{TEAM_ID}",
+    export_options: {
+      signingStyle: "automatic",
+      teamID: TEAM_ID,
+    },
+  }
+end
+
+# The Flutter iOS release (unsigned), then pods via Homebrew's CocoaPods
+# (fastlane's own cocoapods action fails on newer Rubies; see SpotLat).
+def flutter_build_release
+  Dir.chdir(REPO_ROOT) do
+    sh("flutter clean")
+    sh("flutter pub get")
+  end
+  Dir.chdir(IOS_DIR) { sh("/opt/homebrew/bin/pod install") }
+  Dir.chdir(REPO_ROOT) { sh("flutter build ios --release --no-codesign") }
+end
+
+platform :ios do
+  desc "Register the App ID (with Push Notifications) on the developer portal"
+  lane :register_app_id do
+    api_key
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(key_id: ASC_KEY_ID, issuer_id: ASC_ISSUER_ID, filepath: ASC_KEY_PATH)
+    bundle = Spaceship::ConnectAPI::BundleId.find(APP_IDENTIFIER)
+    if bundle
+      UI.message("App ID #{APP_IDENTIFIER} already exists")
+    else
+      bundle = Spaceship::ConnectAPI::BundleId.create(
+        name: "TSL Facility Manager",
+        platform: Spaceship::ConnectAPI::BundleIdPlatform::IOS,
+        identifier: APP_IDENTIFIER,
+      )
+      UI.success("Registered App ID #{APP_IDENTIFIER}")
+    end
+    # Push Notifications: Apple refuses capability changes with a team API
+    # key ("Unauthenticated"). Automatic signing turns it on during the build
+    # anyway, because Runner.entitlements asks for aps-environment.
+    push = Spaceship::ConnectAPI::BundleIdCapability::Type::PUSH_NOTIFICATIONS
+    begin
+      if bundle.get_capabilities.any? { |c| c.capability_type == push }
+        UI.message("Push Notifications already enabled")
+      else
+        bundle.update_capability(push, enabled: true)
+        UI.success("Enabled Push Notifications")
+      end
+    rescue StandardError => e
+      UI.important("Couldn't change capabilities with the API key (#{e.message.lines.first&.strip}); " \
+                   "automatic signing enables Push from the entitlements during the build.")
+    end
+  end
+
+  desc "Build the Flutter release + signed IPA and upload to TestFlight"
+  lane :deploy do
+    flutter_build_release
+    build_app(**gym_options)
+    upload(ipa: lane_context[SharedValues::IPA_OUTPUT_PATH])
+  end
+
+  # Re-export and upload an archive that already built (e.g. after an export
+  # failure), without rebuilding: `fastlane ios export_upload archive:<path>`.
+  desc "Export an existing .xcarchive to an IPA and upload it"
+  lane :export_upload do |options|
+    build_app(**gym_options, skip_build_archive: true, archive_path: options[:archive])
+    upload(ipa: lane_context[SharedValues::IPA_OUTPUT_PATH])
+  end
+
+  desc "Build the signed IPA only (no upload)"
+  lane :build do
+    flutter_build_release
+    build_app(**gym_options)
+  end
+
+  # Upload with altool rather than upload_to_testflight, which gave a
+  # spurious 409 ("bundle version must be higher") on the sibling apps.
+  desc "Upload an existing IPA to TestFlight (via altool)"
+  lane :upload do |options|
+    ipa = File.expand_path(options[:ipa] ||
+          lane_context[SharedValues::IPA_OUTPUT_PATH] ||
+          File.join(IOS_DIR, "build", IPA_NAME))
+    UI.user_error!("No IPA found at #{ipa} — build it first") unless File.exist?(ipa)
+    api_key
+
+    # altool only reads API keys from a few fixed folders.
+    key_dir = File.expand_path("~/.appstoreconnect/private_keys")
+    key_dest = File.join(key_dir, File.basename(ASC_KEY_PATH))
+    unless File.exist?(key_dest)
+      FileUtils.mkdir_p(key_dir)
+      FileUtils.cp(ASC_KEY_PATH, key_dest)
+      File.chmod(0o600, key_dest)
+    end
+
+    UI.message("Uploading #{File.basename(ipa)} to TestFlight...")
+    sh("xcrun altool --upload-app -f #{ipa.shellescape} -t ios " \
+       "--apiKey #{ASC_KEY_ID} --apiIssuer #{ASC_ISSUER_ID}")
+    UI.success("Uploaded to TestFlight. Processing takes a few minutes.")
+  end
+
+  # CFBundleVersion comes from $(FLUTTER_BUILD_NUMBER), so the build number
+  # lives only in pubspec.yaml's "version: <name>+<build>" line.
+  desc "Increment the build number in pubspec.yaml"
+  lane :increment_build do
+    pubspec_path = File.join(REPO_ROOT, "pubspec.yaml")
+    pubspec = File.read(pubspec_path)
+    bumped = pubspec.sub(/^version:[ \t]*(\S+)\+(\d+)[ \t]*$/) do
+      "version: #{Regexp.last_match(1)}+#{Regexp.last_match(2).to_i + 1}"
+    end
+    UI.user_error!("No 'version: <name>+<build>' line found in pubspec.yaml") if bumped == pubspec
+    File.write(pubspec_path, bumped)
+    UI.success("Bumped to #{bumped[/^version:.*$/]}")
+  end
+
+  desc "Fetch/create the distribution certificate and App Store profile"
+  lane :certificates do
+    cert(api_key: api_key, development: false)
+    sigh(api_key: api_key, app_identifier: APP_IDENTIFIER, force: true)
+  end
+
+  # Send an uploaded, processed build for review without touching the binary,
+  # metadata or screenshots: `fastlane ios submit build:3`.
+  desc "Submit a processed build for App Store review"
+  lane :submit do |options|
+    upload_to_app_store(
+      api_key: api_key,
+      app_identifier: APP_IDENTIFIER,
+      build_number: options[:build],
+      skip_binary_upload: true,
+      skip_metadata: true,
+      skip_screenshots: true,
+      submit_for_review: true,
+      force: true,
+      precheck_include_in_app_purchases: false,
+      submission_information: {
+        export_compliance_uses_encryption: false,
+        add_id_info_uses_idfa: false,
+      },
+    )
+  end
+end

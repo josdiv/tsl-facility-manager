@@ -58,7 +58,17 @@
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Attach photos of issues and of completed work.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Your location confirms you are at your facility when you clock in and out.</string>
+	<string>Your location confirms you are at the facility when you clock in or out, or report an issue.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Your location confirms you are at the facility when you clock in or out, or report an issue. It is not tracked in the background.</string>
+	<key>GMSApiKey</key>
+	<string>$(GMS_API_KEY)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>

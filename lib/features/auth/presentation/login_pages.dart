@@ -452,6 +452,20 @@ class _EmailVerificationPageState extends State<EmailVerificationPage> {
     }
     // A new email: the client tells us who they are before signing in.
     if (signupTicket case final ticket?) {
+      if (!await context.read<AuthRepository>().clientSignupAllowed()) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'There’s no account for this email. Ask your facility team '
+              'for access.',
+            ),
+          ),
+        );
+        context.pop();
+        return;
+      }
+      if (!mounted) return;
       context.pushReplacement(
         AppRoutes.clientSignup,
         extra: ClientSignup(widget.email, ticket),

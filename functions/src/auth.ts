@@ -63,6 +63,22 @@ export const sendEmailCode = onCall({ region: REGION }, async (request) => {
     return { sent: true };
   }
 
+  // App Review: reviewers can't read the inbox, so one review email signs in
+  // with a fixed code. Its hash lives in settings/appReview, which only the
+  // server can read (set with tool/set_review_code.cjs); nothing is emailed.
+  const review = (await db.doc('settings/appReview').get()).data();
+  if (review?.email === email && typeof review.codeHash === 'string') {
+    await ref.set({
+      uid: client?.id ?? null,
+      codeHash: review.codeHash,
+      attempts: 0,
+      sentAt: Timestamp.now(),
+      expiresAt: Timestamp.fromMillis(Date.now() + CODE_TTL_MS),
+    });
+    logger.info('app review sign-in code set');
+    return { sent: true };
+  }
+
   const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
   await ref.set({
     uid: client?.id ?? null,

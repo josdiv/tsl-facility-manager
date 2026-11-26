@@ -6,6 +6,8 @@ import '../domain/auth_repository.dart';
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -72,6 +74,17 @@ class FirebaseAuthRepository implements AuthRepository {
     if (ticket is String) return ticket;
     await _signInWithToken(result['token'] as String);
     return null;
+  }
+
+  @override
+  Future<bool> clientSignupAllowed() async {
+    if (defaultTargetPlatform != TargetPlatform.iOS) return true;
+    try {
+      final settings = await _db.doc('settings/public').get();
+      return settings.data()?['clientSignupOnIos'] != false;
+    } on FirebaseException {
+      return true; // Offline: let the server decide.
+    }
   }
 
   @override
@@ -144,13 +157,37 @@ class FirebaseAuthRepository implements AuthRepository {
 
   @override
   Future<List<Facility>> facilityOptions() async {
-    if (_auth.currentUser == null) return const [];
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return const [];
     final snap = await _db
         .collection('locations')
         .where('status', isEqualTo: 'active')
         .get();
-    return [for (final doc in snap.docs) _facility(doc.id, doc.data())]
-      ..sort((a, b) => a.name.compareTo(b.name));
+    final hidden = await _reviewOnlyFacilities(uid);
+    return [
+      for (final doc in snap.docs)
+        if (!hidden.contains(doc.id)) _facility(doc.id, doc.data()),
+    ]..sort((a, b) => a.name.compareTo(b.name));
+  }
+
+  /// The App Review demo facility (settings/public.reviewFacilityIds) is
+  /// kept for every store review but shown only to the review accounts
+  /// (reviewAccountIds). Returns the IDs to hide from [uid].
+  Future<Set<String>> _reviewOnlyFacilities(String uid) async {
+    try {
+      final settings = (await _db.doc('settings/public').get()).data();
+      final reviewers = List<String>.from(
+        settings?['reviewAccountIds'] as List? ?? const [],
+      );
+      if (reviewers.contains(uid)) return const {};
+      return {
+        ...List<String>.from(
+          settings?['reviewFacilityIds'] as List? ?? const [],
+        ),
+      };
+    } on FirebaseException {
+      return const {};
+    }
   }
 
   static Facility _facility(String id, Map<String, dynamic> data) {

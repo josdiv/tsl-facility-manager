@@ -56,3 +56,12 @@ firebase-debug.log
 firestore-debug.log
 ui-debug.log
 /.emulator-test-location
+
+# iOS release secrets (never commit)
+ios/Flutter/Secrets.xcconfig
+ios/fastlane/*.p8
+ios/fastlane/.env*
+ios/fastlane/report.xml
+ios/fastlane/Preview.html
+ios/fastlane/test_output/
+ios/build/

@@ -71,6 +71,13 @@ export const reportIssue = onCall({ region: REGION }, async (request) => {
     if (!location.exists || location.data()!.status !== 'active') {
       throw new HttpsError('permission-denied', 'You can’t report issues for that facility.');
     }
+    // The App Review demo facility only takes reports from review accounts.
+    const settings = (await tx.get(db.doc('settings/public'))).data();
+    const reviewOnly = (settings?.reviewFacilityIds as string[] | undefined) ?? [];
+    const reviewers = (settings?.reviewAccountIds as string[] | undefined) ?? [];
+    if (reviewOnly.includes(locationId) && !reviewers.includes(uid)) {
+      throw new HttpsError('permission-denied', 'You can’t report issues for that facility.');
+    }
     if (zone && zone.data()?.locationId !== locationId) {
       throw new HttpsError('invalid-argument', 'That zone isn’t at this facility.');
     }
