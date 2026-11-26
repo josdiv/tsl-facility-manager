@@ -1,0 +1,109 @@
+# Fastfile for TSL Facility Manager Android (same approach as SpotLat)
+#
+#   fastlane android deploy     build signed AAB + upload to internal testing
+#   fastlane android promote    move the internal release to production
+#   fastlane android listing    upload store texts, icon, feature graphic, screenshots
+#   fastlane android validate   dry-run an upload; proves the service account works
+#   fastlane android status     version codes on each track
+#   fastlane android build      signed AAB only
+# Details: fastlane/DEPLOYMENT.md
+
+default_platform(:android)
+
+FASTLANE_DIR = File.expand_path(FastlaneCore::FastlaneFolder.path)
+ANDROID_DIR = File.dirname(FASTLANE_DIR)
+PROJECT_ROOT = File.dirname(ANDROID_DIR)
+PUBSPEC = File.join(PROJECT_ROOT, "pubspec.yaml")
+AAB = File.join(PROJECT_ROOT, "build", "app", "outputs", "bundle", "release", "app-release.aab")
+
+# pubspec.yaml's "version: <name>+<build>" is versionName + versionCode.
+def pubspec_version
+  line = File.read(PUBSPEC)[/^version:[ \t]*(\S+)[ \t]*$/, 1]
+  UI.user_error!("No 'version: <name>+<build>' line in pubspec.yaml") unless line&.include?("+")
+  line.split("+", 2)
+end
+
+# Uploads only the AAB and this versionCode's release notes; the store
+# listing has its own lane.
+def upload_options
+  {
+    aab: AAB,
+    skip_upload_metadata: true,
+    skip_upload_images: true,
+    skip_upload_screenshots: true,
+    skip_upload_changelogs: false,
+  }
+end
+
+platform :android do
+  desc "Build the signed release App Bundle"
+  lane :build do
+    UI.user_error!("android/key.properties is missing (upload key)") unless File.exist?(File.join(ANDROID_DIR, "key.properties"))
+    version, build = pubspec_version
+    Dir.chdir(PROJECT_ROOT) { sh("flutter build appbundle --release") }
+    UI.user_error!("Expected AAB at #{AAB}") unless File.exist?(AAB)
+    UI.success("Built #{version} (#{build}) -> #{AAB}")
+  end
+
+  desc "Dry-run an upload to the internal track (nothing is published)"
+  lane :validate do
+    build unless File.exist?(AAB)
+    upload_to_play_store(**upload_options, track: "internal", validate_only: true)
+    UI.success("Play Console accepted the bundle and the service account has access")
+  end
+
+  desc "Build and upload to the internal testing track"
+  lane :deploy do
+    build
+    version, code = pubspec_version
+    upload_to_play_store(**upload_options, track: "internal")
+    UI.success("#{version} (#{code}) is on the internal track")
+  end
+
+  desc "Promote the current internal release to production"
+  lane :promote do |options|
+    upload_to_play_store(
+      track: "internal",
+      track_promote_to: "production",
+      skip_upload_aab: true,
+      skip_upload_apk: true,
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+      skip_upload_changelogs: true,
+      # Staged rollout, e.g. promote rollout:0.2 for 20%; omit for 100%.
+      rollout: options[:rollout],
+    )
+    UI.success("Promoted internal -> production")
+  end
+
+  desc "Upload the store listing: texts, icon, feature graphic, screenshots"
+  lane :listing do
+    upload_to_play_store(
+      # supply looks for a release on the track; production is empty until
+      # the first promotion, so read the internal one.
+      track: "internal",
+      skip_upload_aab: true,
+      skip_upload_apk: true,
+      skip_upload_changelogs: true,
+      skip_upload_metadata: false,
+      skip_upload_images: false,
+      skip_upload_screenshots: false,
+      sync_image_upload: true,
+    )
+    UI.success("Store listing uploaded")
+  end
+
+  desc "Show the version codes on each track"
+  lane :status do
+    %w[internal alpha beta production].each do |track|
+      codes = begin
+        google_play_track_version_codes(track: track)
+      rescue StandardError
+        [] # no release on that track yet
+      end
+      UI.message(format("%-11s %s", track, codes.empty? ? "-" : codes.join(", ")))
+    end
+    UI.message("pubspec.yaml: #{pubspec_version.join('+')}")
+  end
+end

@@ -1,0 +1,1 @@
+First release: report issues with photos from the facility, follow each job to sign-off, GPS clock-in for staff and review for supervisors.

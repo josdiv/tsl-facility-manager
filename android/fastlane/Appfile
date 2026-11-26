@@ -1,0 +1,6 @@
+# Google Play package name (same as the iOS bundle ID)
+package_name("com.dawnglobalict.tslfacilitymanager")
+
+# Service account "tsl-play-publisher" in the tsl-facility-manager Google Cloud
+# project, invited in Play Console. Git-ignored; see DEPLOYMENT.md.
+json_key_file("fastlane/play-service-account.json")

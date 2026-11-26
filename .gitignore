@@ -65,3 +65,11 @@ ios/fastlane/report.xml
 ios/fastlane/Preview.html
 ios/fastlane/test_output/
 ios/build/
+
+# Android release secrets (never commit)
+android/fastlane/*.json
+android/fastlane/.env*
+android/fastlane/report.xml
+
+# Firebase CLI deploy cache
+.firebase/
