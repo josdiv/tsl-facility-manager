@@ -1,0 +1,14 @@
+Thanks for taking a look at TSL Facility Manager. It's used by Thick Services, a facility management company in Nigeria, together with its clients and field staff.
+
+Reporting an issue and clocking in only work when the phone is at the facility. So you can try everything from where you are, we've set up a test facility called "App Review Demo – do not use" that covers your location. Please allow location access when asked.
+
+1. Client (report an issue)
+On the first screen, enter {CLIENT_EMAIL} and tap "Send verification code", then enter the code {CLIENT_CODE}. No email is sent for this address; the code always works. Open Report, choose "App Review Demo – do not use", add a title and description (photos are optional) and tap Submit issue. You can follow it under Requests and message the team from there.
+
+2. Supervisor (assign and review)
+Sign out from Profile, tap "Staff or supervisor? Sign in" and use {SUPERVISOR_EMAIL} / {SUPERVISOR_PASSWORD}. Clock in from the Clock tab first (every task action needs a started shift). Under Review > Team work, open the request you just made and assign it to App Review Technician.
+
+3. Technician (do the work)
+Sign in with the demo account above (App Review Technician). Clock in from the Clock tab, open the task, tap Start work, then add a note and a photo and send it for review. The supervisor can then confirm it or send it back.
+
+Account deletion: clients can delete their account under Profile > Delete account. Staff and supervisor accounts are managed by the company in its office dashboard.

@@ -23,6 +23,22 @@ For _fastlane_ installation instructions, see [Installing _fastlane_](https://do
 
 Register the App ID (with Push Notifications) on the developer portal
 
+### ios listing
+
+```sh
+[bundle exec] fastlane ios listing
+```
+
+Upload the App Store listing: texts, screenshots, review info
+
+### ios app_info
+
+```sh
+[bundle exec] fastlane ios app_info
+```
+
+Show the app record: primary language and versions
+
 ### ios deploy
 
 ```sh

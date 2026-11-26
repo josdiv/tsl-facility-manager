@@ -45,9 +45,19 @@ class Facility extends Equatable {
 
 /// Facilities a client can choose from in sample mode.
 const sampleFacilityOptions = [
-  Facility('marina', 'Marina Towers, Lagos'),
-  Facility('cedar', 'Cedar Court, Abuja'),
-  Facility('harbour', 'Harbour Point, Lekki'),
+  Facility(
+    'marina',
+    'Marina Towers, Lagos',
+    latitude: 6.4515,
+    longitude: 3.3886,
+  ),
+  Facility('cedar', 'Cedar Court, Abuja', latitude: 9.0812, longitude: 7.4951),
+  Facility(
+    'harbour',
+    'Harbour Point, Lekki',
+    latitude: 6.4474,
+    longitude: 3.4723,
+  ),
 ];
 
 /// Names of [sampleFacilityOptions], for pickers that only need the label.

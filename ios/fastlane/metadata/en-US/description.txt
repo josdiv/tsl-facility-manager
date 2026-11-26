@@ -1,0 +1,23 @@
+TSL Facility Manager is the app Thick Services uses to look after the buildings it manages. If something breaks where you work or live, you can report it here and follow it until it's fixed. If you're on our team, it's where your jobs, your shifts and your updates live.
+
+For clients
+• Report a problem in a minute: pick the facility, say what's wrong and add a few photos.
+• Reports can only be sent while you're at the facility, so the team knows each one is genuine.
+• See who has been assigned, when to expect them, and every step until the job is signed off.
+• Message the facility team about a request instead of chasing someone on the phone.
+• Sign in with a code sent to your email. There's no password to remember.
+
+For technicians
+• Clock in and out with GPS when you arrive on site.
+• See today's jobs and what's coming up, with the client's notes and photos.
+• Start a job, add photos of the finished work and send it for review.
+• Ask the store for parts without leaving the job.
+
+For supervisors
+• See what's waiting for inspection and who on your team is on site.
+• Confirm finished work, or send it back with notes and photos.
+• Reassign a job when plans change.
+
+The app works hand in hand with the Thick Services office dashboard, so the office and the people on the ground are looking at the same jobs.
+
+Staff and supervisor accounts are set up by Thick Services. Clients can create an account in the app with just an email address.

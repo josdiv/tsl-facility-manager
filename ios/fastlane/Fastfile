@@ -6,6 +6,7 @@
 default_platform(:ios)
 
 require "fileutils"
+require "json"
 require "shellwords"
 
 # Absolute anchors that don't depend on fastlane's working directory: walk up
@@ -70,6 +71,27 @@ def gym_options
   }
 end
 
+# App Review sign-in details and notes, from the git-ignored accounts file.
+# The contact person (name, phone, email) is entered in App Store Connect.
+def review_information
+  path = File.join(REPO_ROOT, ".test-accounts.json")
+  return {} unless File.exist?(path)
+  review = JSON.parse(File.read(path))["appReview"] || {}
+  staff = review["staff"] || {}
+  supervisor = review["supervisor"] || {}
+  client = review["client"] || {}
+  notes = File.read(File.join(FASTLANE_DIR, "review_notes.txt"))
+    .gsub("{CLIENT_EMAIL}", client["email"].to_s)
+    .gsub("{CLIENT_CODE}", client["code"].to_s)
+    .gsub("{SUPERVISOR_EMAIL}", supervisor["email"].to_s)
+    .gsub("{SUPERVISOR_PASSWORD}", supervisor["password"].to_s)
+  {
+    demo_user: staff["email"],
+    demo_password: staff["password"],
+    notes: notes,
+  }
+end
+
 # The Flutter iOS release (unsigned), then pods via Homebrew's CocoaPods
 # (fastlane's own cocoapods action fails on newer Rubies; see SpotLat).
 def flutter_build_release
@@ -112,6 +134,53 @@ platform :ios do
       UI.important("Couldn't change capabilities with the API key (#{e.message.lines.first&.strip}); " \
                    "automatic signing enables Push from the entitlements during the build.")
     end
+  end
+
+  # Listing: texts (fastlane/metadata), screenshots (fastlane/screenshots) and
+  # the App Review details. Doesn't touch the binary and doesn't submit. The
+  # review logins come from the git-ignored .test-accounts.json at run time.
+  desc "Upload the App Store listing: texts, screenshots, review info"
+  lane :listing do
+    version = File.read(File.join(REPO_ROOT, "pubspec.yaml"))[/^version:\s*([^+\s]+)/, 1]
+    upload_to_app_store(
+      api_key: api_key,
+      app_identifier: APP_IDENTIFIER,
+      app_version: version,
+      skip_binary_upload: true,
+      metadata_path: File.join(FASTLANE_DIR, "metadata"),
+      screenshots_path: File.join(FASTLANE_DIR, "screenshots"),
+      overwrite_screenshots: true,
+      app_review_information: review_information,
+      submit_for_review: false,
+      run_precheck_before_submit: false,
+      precheck_include_in_app_purchases: false,
+      force: true,
+    )
+  end
+
+  desc "Show the app record: primary language and versions"
+  lane :app_info do
+    api_key
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.create(key_id: ASC_KEY_ID, issuer_id: ASC_ISSUER_ID, filepath: ASC_KEY_PATH)
+    app = Spaceship::ConnectAPI::App.find(APP_IDENTIFIER)
+    UI.user_error!("No app record for #{APP_IDENTIFIER}") unless app
+    UI.message("App: #{app.name} (#{app.id}) primary locale: #{app.primary_locale}")
+    app.get_app_store_versions.each do |v|
+      UI.message("Version #{v.version_string}: #{v.app_store_state}")
+      detail = begin
+        v.fetch_app_store_review_detail
+      rescue StandardError
+        nil
+      end
+      if detail
+        UI.message("  Review: demo user #{detail.demo_account_name.inspect}, " \
+                   "password #{detail.demo_account_password.to_s.empty? ? 'missing' : 'set'}, " \
+                   "notes #{detail.notes.to_s.length} chars, contact #{[detail.contact_first_name, detail.contact_last_name].compact.join(' ').inspect}")
+      else
+        UI.message("  Review: no details yet")
+      end
+    end
+    app.get_builds.each { |b| UI.message("Build #{b.version}: #{b.processing_state}") }
   end
 
   desc "Build the Flutter release + signed IPA and upload to TestFlight"
